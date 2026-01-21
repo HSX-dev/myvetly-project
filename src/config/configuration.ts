@@ -1,5 +1,5 @@
 export default () => ({
-  port: parseInt(process.env.PORT, 10) || 3000,
+  port: parseInt(process.env.PORT || '3000', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   
   supabase: {
@@ -18,5 +18,21 @@ export default () => ({
   
   jwt: {
     secret: process.env.JWT_SECRET,
+  },
+
+  rateLimit: {
+    ttl: parseInt(process.env.RATE_LIMIT_TTL || '60000', 10),
+    max: parseInt(process.env.RATE_LIMIT_MAX || '100', 10),
+  },
+
+  cors: {
+    origins: process.env.CORS_ORIGINS?.split(',') || [
+      'http://localhost:3000',
+      'http://localhost:5173',
+    ],
+  },
+
+  logging: {
+    level: process.env.LOG_LEVEL || 'info',
   },
 });
