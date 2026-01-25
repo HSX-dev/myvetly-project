@@ -1,12 +1,15 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AiModule } from './ai/ai.module';
 import { SupabaseModule } from './supabase/supabase.module';
+import { DatabaseModule } from './database/database.module';
 import { CacheModule } from './cache/cache.module';
 import { AuthModule } from './auth/auth.module';
+import { AuthGuard } from './auth/auth.guard';
 import { UsersModule } from './users/users.module';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { ClinicsModule } from './clinics/clinics.module';
@@ -32,6 +35,11 @@ import configuration from './config/configuration';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      // In development, prefer .env.local (fallback to .env); in production, use .env
+      envFilePath:
+        process.env.NODE_ENV === 'production'
+          ? '.env'
+          : ['.env.local', '.env'], // Try .env.local first, then .env
       load: [configuration],
     }),
     ThrottlerModule.forRoot([
@@ -41,6 +49,7 @@ import configuration from './config/configuration';
       },
     ]),
     SupabaseModule,
+    DatabaseModule,
     CacheModule,
     AuthModule,
     AiModule,
@@ -65,6 +74,13 @@ import configuration from './config/configuration';
     DashboardModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    // Global authentication guard - protects all endpoints
+    {
+      provide: APP_GUARD,
+      useClass: AuthGuard,
+    },
+  ],
 })
 export class AppModule {}

@@ -6,6 +6,13 @@ export default () => ({
     url: process.env.SUPABASE_URL,
     serviceKey: process.env.SUPABASE_SERVICE_KEY,
   },
+
+  database: {
+    // Use Supabase's connection pooler URL for better performance
+    // Format: postgresql://postgres:[PASSWORD]@[PROJECT_REF].supabase.co:6543/postgres?pgbouncer=true
+    // Or use direct connection: postgresql://postgres:[PASSWORD]@[PROJECT_REF].supabase.co:5432/postgres
+    url: process.env.DATABASE_URL || process.env.SUPABASE_DATABASE_URL,
+  },
   
   ai: {
     deepseekApiKey: process.env.DEEPSEEK_API_KEY,

@@ -1,5 +1,5 @@
 import { Expose } from 'class-transformer';
-import { IsString, IsOptional, IsDateString } from 'class-validator';
+import { IsString, IsOptional, IsDateString, IsUUID, IsNumber } from 'class-validator';
 
 export class UpdatePetDto {
   @Expose()
@@ -20,7 +20,7 @@ export class UpdatePetDto {
   @Expose()
   @IsDateString()
   @IsOptional()
-  date_of_birth?: string;
+  birth_date?: string;
 
   @Expose()
   @IsString()
@@ -33,8 +33,18 @@ export class UpdatePetDto {
   color?: string;
 
   @Expose()
+  @IsNumber()
+  @IsOptional()
+  weight?: number;
+
+  @Expose()
+  @IsUUID()
+  @IsOptional()
+  client_id?: string;
+
+  @Expose()
   @IsString()
   @IsOptional()
-  weight?: string;
+  status?: string;
 }
 

@@ -32,3 +32,6 @@ coverage/
 
 # Misc
 *.tgz
+
+# md files for development
+md/

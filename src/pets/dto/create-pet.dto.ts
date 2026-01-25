@@ -1,10 +1,15 @@
 import { Expose } from 'class-transformer';
-import { IsString, IsOptional, IsUUID, IsDateString } from 'class-validator';
+import { IsString, IsOptional, IsUUID, IsDateString, IsNumber } from 'class-validator';
 
 export class CreatePetDto {
   @Expose()
   @IsUUID()
   client_id: string;
+
+  @Expose()
+  @IsUUID()
+  @IsOptional()
+  tenant_id?: string;
 
   @Expose()
   @IsString()
@@ -23,7 +28,7 @@ export class CreatePetDto {
   @Expose()
   @IsDateString()
   @IsOptional()
-  date_of_birth?: string;
+  birth_date?: string;
 
   @Expose()
   @IsString()
@@ -36,8 +41,13 @@ export class CreatePetDto {
   color?: string;
 
   @Expose()
+  @IsNumber()
+  @IsOptional()
+  weight?: number;
+
+  @Expose()
   @IsString()
   @IsOptional()
-  weight?: string;
+  status?: string;
 }
 
