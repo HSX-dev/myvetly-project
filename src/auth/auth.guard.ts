@@ -12,6 +12,23 @@ import { IS_PUBLIC_KEY } from './decorators/public.decorator';
 import * as jwt from 'jsonwebtoken';
 
 /**
+ * User context interface representing the authenticated user
+ * This is attached to the request by AuthGuard
+ */
+export interface UserContext {
+  id: string;
+  email?: string;
+  auth_user_id: string;
+  user_id: string;
+  clinic_id: string | null;
+  organization_id: string | null;
+  role: string;
+  role_id?: string | null;
+  full_name?: string;
+  access_token?: string;
+}
+
+/**
  * AuthGuard that validates Supabase JWT tokens
  * Extracts user information from the token and attaches it to the request
  * 

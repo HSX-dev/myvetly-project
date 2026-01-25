@@ -30,8 +30,8 @@ export class UsersController {
   }
 
   @Get('me')
-  getCurrentUser(@GetUser('email') email: string) {
-    return this.usersService.findByEmail(email);
+  getCurrentUser(@GetUser() user: any) {
+    return this.usersService.getCurrentUserProfile(user);
   }
 
   @Get(':id')

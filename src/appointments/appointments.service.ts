@@ -87,16 +87,70 @@ export class AppointmentsService {
     return data;
   }
 
-  async findByPet(petId: string) {
+  async findByPet(petId: string, user: any) {
+    // Validate user has access to this pet's clinic
+    const { data: pet, error: petError } = await this.supabaseService
+      .getClient()
+      .from('pets')
+      .select('tenant_id')
+      .eq('id', petId)
+      .single();
+
+    if (petError || !pet) {
+      throw new NotFoundException(`Pet with id ${petId} not found`);
+    }
+
+    // Validate clinic access
+    if (pet.tenant_id && user?.clinic_id !== pet.tenant_id) {
+      throw new Error('Access denied: You do not have access to this pet');
+    }
+
     const { data, error } = await this.supabaseService
       .getClient()
       .from('appointments')
-      .select('*')
+      .select(`
+        *,
+        clients!client_id (
+          id,
+          phone,
+          user_id,
+          users!user_id (
+            id,
+            full_name,
+            email
+          )
+        ),
+        users!vet_id (
+          id,
+          full_name
+        )
+      `)
       .eq('pet_id', petId)
       .order('appointment_time', { ascending: false });
 
     if (error) throw error;
-    return data;
+    
+    // Transform data to match frontend interface
+    return (data || []).map((appointment: any) => {
+      const clientUser = appointment.clients?.users;
+      const clientData = appointment.clients;
+      const provider = appointment.users;
+
+      return {
+        ...appointment,
+        client: clientUser ? {
+          id: clientData?.id || '',
+          full_name: clientUser.full_name || clientUser.email?.split('@')[0] || 'Unknown',
+          email: clientUser.email || '',
+          phone: clientData?.phone,
+        } : undefined,
+        provider: provider ? {
+          id: provider.id,
+          full_name: provider.full_name || 'Unknown Provider',
+        } : undefined,
+        clinic_id: appointment.tenant_id || appointment.clinic_id,
+      };
+    });
   }
 }
 

@@ -1,5 +1,6 @@
 import { Controller, Get, Param } from '@nestjs/common';
 import { InvoicesService } from './invoices.service';
+import { GetUser } from '../utils/decorators/get-user.decorator';
 
 @Controller('invoices')
 export class InvoicesController {
@@ -21,8 +22,8 @@ export class InvoicesController {
   }
 
   @Get('pet/:petId')
-  findByPet(@Param('petId') petId: string) {
-    return this.invoicesService.findByPet(petId);
+  findByPet(@Param('petId') petId: string, @GetUser() user: any) {
+    return this.invoicesService.findByPet(petId, user);
   }
 }
 

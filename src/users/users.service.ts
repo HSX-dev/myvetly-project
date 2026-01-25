@@ -75,5 +75,32 @@ export class UsersService {
     if (error) throw error;
     return { success: true };
   }
+
+  async getCurrentUserProfile(user: any) {
+    if (!user || !user.user_id) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Use user_id (users table id) instead of id (auth_user_id)
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('users')
+      .select(`
+        id,
+        role,
+        role_id,
+        role_name,
+        organization_id,
+        clinic_id,
+        has_set_password,
+        full_name,
+        role_permissions:user_roles!role_id(id, admin_controls, view_access, create_access, edit_access, cancel_access, delete_access)
+      `)
+      .eq('id', user.user_id)
+      .single();
+
+    if (error) throw new NotFoundException(`User profile not found`);
+    return data;
+  }
 }
 

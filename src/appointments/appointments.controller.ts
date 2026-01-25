@@ -13,6 +13,7 @@ import {
 import { AppointmentsService } from './appointments.service';
 import { CreateAppointmentDto, UpdateAppointmentDto } from './dto';
 import { CleanDtoPipe } from '../utils/pipes/clean-dto.pipe';
+import { GetUser } from '../utils/decorators/get-user.decorator';
 
 @Controller('appointments')
 export class AppointmentsController {
@@ -39,8 +40,8 @@ export class AppointmentsController {
   }
 
   @Get('pet/:petId')
-  findByPet(@Param('petId') petId: string) {
-    return this.appointmentsService.findByPet(petId);
+  findByPet(@Param('petId') petId: string, @GetUser() user: any) {
+    return this.appointmentsService.findByPet(petId, user);
   }
 
   @Get(':id')
