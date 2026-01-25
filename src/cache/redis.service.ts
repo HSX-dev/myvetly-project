@@ -8,8 +8,35 @@ export class RedisService implements OnModuleDestroy {
 
   constructor(private configService: ConfigService) {
     const redisUrl = this.configService.get<string>('redis.url');
-    if (redisUrl) {
-      this.redis = new Redis(redisUrl);
+    if (redisUrl && redisUrl !== 'redis://localhost:6379') {
+      try {
+        this.redis = new Redis(redisUrl, {
+          retryStrategy: (times) => {
+            // Don't retry if connection fails - just disable Redis
+            return null;
+          },
+          maxRetriesPerRequest: null,
+          enableOfflineQueue: false,
+        });
+
+        // Handle connection errors gracefully
+        this.redis.on('error', (error: Error & { code?: string }) => {
+          // Only log if it's not a connection refused error (Redis not running)
+          const errorCode = (error as any).code;
+          if (errorCode !== 'ECONNREFUSED' && errorCode !== 'EACCES') {
+            console.warn('⚠️  Redis error:', error.message);
+          }
+        });
+
+        this.redis.on('connect', () => {
+          console.log('✅ Redis connection established');
+        });
+      } catch (error) {
+        console.warn('⚠️  Failed to initialize Redis. Caching will be disabled.');
+        this.redis = null;
+      }
+    } else {
+      console.warn('⚠️  Redis URL not configured or using default localhost. Redis features will be disabled.');
     }
   }
 
@@ -71,5 +98,19 @@ export class RedisService implements OnModuleDestroy {
   async getCachedPetContext(petId: string): Promise<object | null> {
     const cached = await this.get(`pet:context:${petId}`);
     return cached ? JSON.parse(cached) : null;
+  }
+
+  // User profile cache helpers
+  async cacheUserProfile(authUserId: string, profile: object, ttlSeconds = 300): Promise<void> {
+    await this.set(`user:profile:${authUserId}`, JSON.stringify(profile), ttlSeconds);
+  }
+
+  async getCachedUserProfile(authUserId: string): Promise<object | null> {
+    const cached = await this.get(`user:profile:${authUserId}`);
+    return cached ? JSON.parse(cached) : null;
+  }
+
+  async invalidateUserProfile(authUserId: string): Promise<void> {
+    await this.del(`user:profile:${authUserId}`);
   }
 }
