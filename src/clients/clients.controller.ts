@@ -12,6 +12,7 @@ import {
 import { ClientsService } from './clients.service';
 import { CreateClientDto, UpdateClientDto } from './dto';
 import { CleanDtoPipe } from '../utils/pipes/clean-dto.pipe';
+import { GetUser } from '../utils/decorators/get-user.decorator';
 
 @Controller('clients')
 export class ClientsController {
@@ -24,8 +25,8 @@ export class ClientsController {
   }
 
   @Get()
-  findAll() {
-    return this.clientsService.findAll();
+  findAll(@GetUser() user: any) {
+    return this.clientsService.findAll(user);
   }
 
   @Get(':id')

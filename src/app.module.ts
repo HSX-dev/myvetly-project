@@ -29,6 +29,7 @@ import { ReportsModule } from './reports/reports.module';
 import { RolesModule } from './roles/roles.module';
 import { SettingsModule } from './settings/settings.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { SoapModule } from './soap/soap.module';
 import configuration from './config/configuration';
 
 @Module({
@@ -72,6 +73,7 @@ import configuration from './config/configuration';
     RolesModule,
     SettingsModule,
     DashboardModule,
+    SoapModule,
   ],
   controllers: [AppController],
   providers: [

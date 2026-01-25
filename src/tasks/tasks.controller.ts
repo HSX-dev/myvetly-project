@@ -1,5 +1,6 @@
 import { Controller, Get, Param } from '@nestjs/common';
 import { TasksService } from './tasks.service';
+import { GetUser } from '../utils/decorators/get-user.decorator';
 
 @Controller('tasks')
 export class TasksController {
@@ -18,6 +19,11 @@ export class TasksController {
   @Get('user/:userId')
   findByUser(@Param('userId') userId: string) {
     return this.tasksService.findByUser(userId);
+  }
+
+  @Get('pet/:petId')
+  findByPet(@Param('petId') petId: string, @GetUser() user: any) {
+    return this.tasksService.findByPet(petId, user);
   }
 }
 

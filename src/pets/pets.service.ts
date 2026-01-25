@@ -1,14 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreatePetDto, UpdatePetDto } from './dto';
-
-interface UserContext {
-  id: string;
-  user_id: string;
-  clinic_id: string | null;
-  organization_id: string | null;
-  role: string;
-}
+import { UserContext } from '../auth/auth.guard';
 
 @Injectable()
 export class PetsService {
