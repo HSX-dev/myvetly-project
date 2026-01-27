@@ -30,6 +30,7 @@ import { RolesModule } from './roles/roles.module';
 import { SettingsModule } from './settings/settings.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { SoapModule } from './soap/soap.module';
+import { WhiteboardModule } from './whiteboard/whiteboard.module';
 import configuration from './config/configuration';
 
 @Module({
@@ -74,6 +75,7 @@ import configuration from './config/configuration';
     SettingsModule,
     DashboardModule,
     SoapModule,
+    WhiteboardModule,
   ],
   controllers: [AppController],
   providers: [
