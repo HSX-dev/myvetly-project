@@ -41,7 +41,7 @@ export class AiService {
       throw new RateLimitException();
     }
 
-    // Get pet context if pet_id provided
+    // Get pet context if pet_id provided (parallel fetch for speed)
     let petContext = '';
     if (dto.pet_id) {
       // Check cache first
@@ -49,12 +49,15 @@ export class AiService {
       if (cached) {
         petContext = JSON.stringify(cached);
       } else {
-        const pet = await this.supabaseService.getPetContext(dto.pet_id);
-        const records = await this.supabaseService.getPetMedicalRecords(dto.pet_id, 5);
-        const appointments = await this.supabaseService.getPetAppointments(dto.pet_id, 3);
+        // Parallel fetch - 3x faster than sequential
+        const [pet, records, appointments] = await Promise.all([
+          this.supabaseService.getPetContext(dto.pet_id),
+          this.supabaseService.getPetMedicalRecords(dto.pet_id, 3), // Reduced from 5 to 3
+          this.supabaseService.getPetAppointments(dto.pet_id, 2),   // Reduced from 3 to 2
+        ]);
         
         const context = { pet, records, appointments };
-        await this.redisService.cachePetContext(dto.pet_id, context, 300);
+        this.redisService.cachePetContext(dto.pet_id, context, 300); // Don't await cache write
         petContext = JSON.stringify(context);
       }
     }
@@ -71,13 +74,13 @@ export class AiService {
       dto.message = `[Image Analysis: ${imageAnalysis.content}]\n\nUser question: ${dto.message}`;
     }
 
-    // Call DeepSeek for chat
+    // Call DeepSeek for chat (reduced tokens for faster response)
     const response = await this.deepseekProvider.chatWithRetry(
       [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: dto.message },
       ],
-      { temperature: 0.7, maxTokens: 1500 },
+      { temperature: 0.7, maxTokens: 800 }, // Reduced from 1500 for faster response
     );
 
     return {
