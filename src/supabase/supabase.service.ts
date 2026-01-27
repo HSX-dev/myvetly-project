@@ -9,8 +9,8 @@ export class SupabaseService {
   private supabase: SupabaseClient;
 
   constructor(private configService: ConfigService) {
-    const supabaseUrl = this.configService.get<string>('supabase.url');
-    const supabaseKey = this.configService.get<string>('supabase.serviceKey');
+    const supabaseUrl = this.configService.get<string>('supabase.url') || '';
+    const supabaseKey = this.configService.get<string>('supabase.serviceKey') || '';
     
     if (!supabaseUrl || !supabaseKey) {
       throw new Error('Supabase URL and Service Key must be configured');
