@@ -49,5 +49,35 @@ export class CreatePetDto {
   @IsString()
   @IsOptional()
   status?: string;
+
+  @Expose()
+  @IsString()
+  @IsOptional()
+  reproductive_status?: string;
+
+  @Expose()
+  @IsString()
+  @IsOptional()
+  microchip_id?: string;
+
+  @Expose()
+  @IsString()
+  @IsOptional()
+  rabies_tag?: string;
+
+  @Expose()
+  @IsString()
+  @IsOptional()
+  allergies?: string;
+
+  @Expose()
+  @IsString()
+  @IsOptional()
+  medical_conditions?: string;
+
+  @Expose()
+  @IsString()
+  @IsOptional()
+  behavioral_notes?: string;
 }
 

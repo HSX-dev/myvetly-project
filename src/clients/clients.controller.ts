@@ -20,8 +20,8 @@ export class ClientsController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  create(@Body(CleanDtoPipe) createClientDto: CreateClientDto) {
-    return this.clientsService.create(createClientDto);
+  create(@Body(CleanDtoPipe) createClientDto: CreateClientDto, @GetUser() user: any) {
+    return this.clientsService.create(createClientDto, user);
   }
 
   @Get()
@@ -48,13 +48,14 @@ export class ClientsController {
   update(
     @Param('id') id: string,
     @Body(CleanDtoPipe) updateClientDto: UpdateClientDto,
+    @GetUser() user: any,
   ) {
-    return this.clientsService.update(id, updateClientDto);
+    return this.clientsService.update(id, updateClientDto, user);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.clientsService.remove(id);
+  remove(@Param('id') id: string, @GetUser() user: any) {
+    return this.clientsService.remove(id, user);
   }
 }
 

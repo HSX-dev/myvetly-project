@@ -5,13 +5,17 @@ import {
   IsUUID,
   IsDateString,
   IsEnum,
+  IsNumber,
+  IsBoolean,
 } from 'class-validator';
-import { AppointmentStatus, AppointmentType } from '../../utils/enums';
+import { AppointmentStatus } from '../../utils/enums';
 
 export class CreateAppointmentDto {
+  // Optional for Block appointments
   @Expose()
   @IsUUID()
-  pet_id: string;
+  @IsOptional()
+  pet_id?: string;
 
   @Expose()
   @IsUUID()
@@ -21,21 +25,24 @@ export class CreateAppointmentDto {
   @Expose()
   @IsUUID()
   @IsOptional()
-  clinic_id?: string;
+  vet_id?: string;
+
+  @Expose()
+  @IsUUID()
+  clinic_id: string;
 
   @Expose()
   @IsUUID()
   @IsOptional()
-  veterinarian_id?: string;
+  organization_id?: string;
 
   @Expose()
   @IsDateString()
   appointment_time: string;
 
   @Expose()
-  @IsEnum(AppointmentType)
-  @IsOptional()
-  type?: AppointmentType;
+  @IsString()
+  service_type: string;
 
   @Expose()
   @IsEnum(AppointmentStatus)
@@ -45,11 +52,50 @@ export class CreateAppointmentDto {
   @Expose()
   @IsString()
   @IsOptional()
+  symptoms?: string;
+
+  @Expose()
+  @IsString()
+  @IsOptional()
   notes?: string;
 
   @Expose()
   @IsString()
   @IsOptional()
-  reason?: string;
-}
+  client_notes?: string;
 
+  @Expose()
+  @IsString()
+  @IsOptional()
+  reason_for_consultation?: string;
+
+  @Expose()
+  @IsNumber()
+  @IsOptional()
+  estimated_duration?: number;
+
+  @Expose()
+  @IsEnum(['low', 'medium', 'high', 'critical'])
+  @IsOptional()
+  emergency_level?: 'low' | 'medium' | 'high' | 'critical';
+
+  @Expose()
+  @IsBoolean()
+  @IsOptional()
+  is_telehealth?: boolean;
+
+  @Expose()
+  @IsString()
+  @IsOptional()
+  booking_reference?: string;
+
+  @Expose()
+  @IsString()
+  @IsOptional()
+  payment_status?: string;
+
+  @Expose()
+  @IsString()
+  @IsOptional()
+  payment_reference?: string;
+}

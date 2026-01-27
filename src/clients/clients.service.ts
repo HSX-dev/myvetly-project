@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreateClientDto, UpdateClientDto } from './dto';
 import { UserContext } from '../auth/auth.guard';
@@ -68,22 +69,14 @@ export class ClientsService {
         const user = Array.isArray(item.users) ? item.users[0] : item.users;
         const pets = petsByClientId.get(item.id) || [];
 
+        // Return all client fields from the database, plus user info and pets
         return {
-          id: item.id,
-          phone: item.phone,
-          organization_id: item.organization_id,
-          clinic_id: item.clinic_id,
-          user_id: item.user_id,
-          created_at: item.created_at,
+          ...item, // Include all fields from clients table
           first_name: user?.first_name ?? '',
           last_name: user?.last_name ?? '',
           full_name: user?.full_name ?? '',
           email: user?.email ?? '',
-          clinic_name: 'N/A',
-          address_state: item.address_state,
-          gender: item.gender,
-          client_type: item.client_type,
-          status: item.status,
+          clinic_name: item.clinic_name || 'N/A',
           pet_names: pets, // Store pets array for table display
         };
       })
@@ -96,44 +89,374 @@ export class ClientsService {
     const { data, error } = await this.supabaseService
       .getClient()
       .from('clients')
-      .select('*, users(*), pets(*)')
+      .select(`
+        *,
+        users!clients_user_id_fkey ( first_name, last_name, full_name, email )
+      `)
       .eq('id', id)
       .single();
 
-    if (error) throw new NotFoundException(`Client with id ${id} not found`);
-    return data;
+    if (error) {
+      if (error.code === 'PGRST116') {
+        throw new NotFoundException(`Client with id ${id} not found`);
+      }
+      throw error;
+    }
+
+    if (!data) {
+      throw new NotFoundException(`Client with id ${id} not found`);
+    }
+
+    const { users, ...clientData } = data;
+    const user = Array.isArray(users) ? users[0] : users;
+
+    // Map database field names to frontend Client type field names
+    return {
+      ...clientData,
+      first_name: user?.first_name ?? '',
+      last_name: user?.last_name ?? '',
+      full_name: user?.full_name ?? '',
+      email: user?.email ?? '',
+      clinic_name: 'N/A',
+      // Map database alert field to alert_notes
+      alert_notes: clientData.alert,
+      // Map database communication fields to Client type fields
+      comm_email_ok: clientData.comm_appointment_notification ?? true,
+      comm_phone_ok: clientData.comm_mass_communication ?? true,
+      comm_sms_ok: clientData.comm_client_reminders ?? true,
+      comm_mail_ok: false, // Not in database, default to false
+    };
   }
 
-  async create(createClientDto: CreateClientDto) {
+  async create(createClientDto: CreateClientDto, user: UserContext) {
+    // Separate fields that go to different tables
+    const { first_name, last_name, email, ...clientFields } = createClientDto;
+
+    // Step 1: Create user first if we have first_name/last_name or email
+    let userId: string | undefined = clientFields.user_id;
+
+    // If a user_id was provided, verify it exists
+    if (userId) {
+      const { data: existingUser } = await this.supabaseService
+        .getClient()
+        .from('users')
+        .select('id, clinic_id, organization_id')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (!existingUser) {
+        userId = undefined; // Clear it so we create a new one
+      } else {
+        // Verify the user belongs to the correct clinic
+        if (
+          existingUser.clinic_id !== clientFields.clinic_id ||
+          existingUser.organization_id !== clientFields.organization_id
+        ) {
+          userId = undefined; // Clear it so we create a new one
+        }
+      }
+    }
+
+    if ((first_name || last_name || email) && !userId) {
+      // Combine first_name and last_name for the users table
+      const full_name = [first_name, last_name].filter(Boolean).join(' ');
+
+      // Generate a UUID for the new user
+      const newUserId = randomUUID();
+
+      // CRITICAL: organization_id and clinic_id are required for multi-tenant isolation
+      if (!clientFields.organization_id || !clientFields.clinic_id) {
+        throw new Error('Organization ID and Clinic ID are required to create a client');
+      }
+
+      // Check if user with this email already exists in the SAME clinic/organization
+      if (email) {
+        const { data: existingUser } = await this.supabaseService
+          .getClient()
+          .from('users')
+          .select('id, clinic_id, organization_id, email')
+          .eq('email', email.trim())
+          .eq('clinic_id', clientFields.clinic_id)
+          .eq('organization_id', clientFields.organization_id)
+          .maybeSingle();
+
+        if (existingUser) {
+          throw new Error(
+            `A client with email ${email} is already registered in this clinic.`,
+          );
+        }
+      }
+
+      // Create a new user for this client
+      const userData: any = {
+        id: newUserId,
+        full_name: full_name || '',
+        first_name: first_name || '',
+        last_name: last_name || '',
+        email: email || '',
+        organization_id: clientFields.organization_id,
+        clinic_id: clientFields.clinic_id,
+      };
+
+      const { data: newUser, error: userError } = await this.supabaseService
+        .getClient()
+        .from('users')
+        .insert(userData)
+        .select('id')
+        .single();
+
+      if (userError) {
+        // If it's a duplicate/conflict error, throw a clear error message
+        if (
+          userError.code === '23505' ||
+          userError.message.includes('duplicate') ||
+          userError.message.includes('unique')
+        ) {
+          if (email) {
+            throw new Error(`A client with email ${email} is already registered.`);
+          } else {
+            throw new Error(`Failed to create user: ${userError.message}`);
+          }
+        } else {
+          throw new Error(`Failed to create user: ${userError.message}`);
+        }
+      } else {
+        userId = newUser?.id || newUserId;
+      }
+    }
+
+    if (!userId) {
+      throw new Error('User ID is required to create a client');
+    }
+
+    // Verify the user exists before creating the client
+    const { data: verifyUser, error: verifyError } = await this.supabaseService
+      .getClient()
+      .from('users')
+      .select('id, email, full_name, clinic_id, organization_id')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (verifyError || !verifyUser) {
+      throw new Error(`User with ID ${userId} does not exist. Cannot create client.`);
+    }
+
+    // Double-check the user belongs to the correct clinic
+    if (verifyUser.clinic_id !== clientFields.clinic_id) {
+      throw new Error(
+        `User belongs to a different clinic. Expected ${clientFields.clinic_id}, got ${verifyUser.clinic_id}`,
+      );
+    }
+
+    // Step 2: Map form field names to database field names
+    const fieldsToInsert: any = {
+      phone: clientFields.phone,
+      title: clientFields.title,
+      aka: clientFields.aka,
+      gender: clientFields.gender,
+      client_type: clientFields.client_type,
+      comm_preferred_contact_method: clientFields.comm_preferred_contact_method,
+      address_street: clientFields.address_street,
+      address_apt: clientFields.address_apt,
+      address_city: clientFields.address_city,
+      address_state: clientFields.address_state,
+      address_zip: clientFields.address_zip,
+      drivers_license_number: clientFields.drivers_license_number,
+      drivers_license_expiration: clientFields.drivers_license_expiration,
+      // Map alert_notes to alert (database field name)
+      alert: clientFields.alert_notes,
+      account_source: clientFields.account_source,
+      tax_exempt: clientFields.tax_exempt,
+      additional_info: clientFields.additional_info,
+      // Map communication preference fields to database field names
+      comm_appointment_notification: clientFields.comm_email_ok ?? true,
+      comm_mass_communication: clientFields.comm_phone_ok ?? true,
+      comm_client_reminders: clientFields.comm_sms_ok ?? true,
+      // System fields
+      organization_id: clientFields.organization_id,
+      clinic_id: clientFields.clinic_id,
+      user_id: userId,
+    };
+
+    // Remove undefined/null values
+    Object.keys(fieldsToInsert).forEach((key) => {
+      if (fieldsToInsert[key] === undefined || fieldsToInsert[key] === null) {
+        delete fieldsToInsert[key];
+      }
+    });
+
+    // Step 3: Create the client
     const { data, error } = await this.supabaseService
       .getClient()
       .from('clients')
-      .insert(createClientDto)
-      .select()
+      .insert(fieldsToInsert)
+      .select(`
+        *,
+        users!clients_user_id_fkey ( first_name, last_name, full_name, email )
+      `)
       .single();
 
-    if (error) throw error;
-    return data;
+    if (error) {
+      throw new Error(`Client creation failed: ${error.message}`);
+    }
+
+    if (!data) {
+      throw new Error('No data returned from create');
+    }
+
+    const { users, ...newClient } = data;
+    const userData = Array.isArray(users) ? users[0] : users;
+
+    return {
+      ...newClient,
+      first_name: userData?.first_name ?? '',
+      last_name: userData?.last_name ?? '',
+      full_name: userData?.full_name ?? '',
+      email: userData?.email ?? '',
+      clinic_name: 'N/A',
+    };
   }
 
-  async update(id: string, updateClientDto: UpdateClientDto) {
-    const { data, error } = await this.supabaseService
-      .getClient()
-      .from('clients')
-      .update(updateClientDto)
-      .eq('id', id)
-      .select()
-      .single();
+  async update(id: string, updateClientDto: UpdateClientDto, user: UserContext) {
+    // Separate fields that go to different tables
+    const { first_name, last_name, full_name, email, ...clientFields } = updateClientDto;
 
-    if (error) throw error;
-    return data;
+    try {
+      // First, get the current client to get the user_id
+      const { data: currentClient, error: fetchError } = await this.supabaseService
+        .getClient()
+        .from('clients')
+        .select('user_id, id, clinic_id, organization_id')
+        .eq('id', id)
+        .single();
+
+      if (fetchError) {
+        throw new Error(`Failed to fetch client: ${fetchError.message}`);
+      }
+
+      // Prepare client fields for update - map form field names to database field names
+      const fieldsToUpdate: any = {
+        phone: clientFields.phone,
+        title: clientFields.title,
+        aka: clientFields.aka,
+        gender: clientFields.gender,
+        client_type: clientFields.client_type,
+        comm_preferred_contact_method: clientFields.comm_preferred_contact_method,
+        address_street: clientFields.address_street,
+        address_apt: clientFields.address_apt,
+        address_city: clientFields.address_city,
+        address_state: clientFields.address_state,
+        address_zip: clientFields.address_zip,
+        drivers_license_number: clientFields.drivers_license_number,
+        drivers_license_expiration: clientFields.drivers_license_expiration,
+        // Map alert_notes to alert (database field name)
+        alert: clientFields.alert_notes,
+        account_source: clientFields.account_source,
+        tax_exempt: clientFields.tax_exempt,
+        additional_info: clientFields.additional_info,
+        // Communication preference fields
+        comm_appointment_notification: clientFields.comm_email_ok,
+        comm_mass_communication: clientFields.comm_phone_ok,
+        comm_client_reminders: clientFields.comm_sms_ok,
+      };
+
+      // Remove undefined/null values to avoid overwriting with null
+      // But preserve boolean false values
+      Object.keys(fieldsToUpdate).forEach((key) => {
+        if (fieldsToUpdate[key] === undefined || fieldsToUpdate[key] === null) {
+          delete fieldsToUpdate[key];
+        }
+      });
+
+      // Update the clients table
+      const { data: updatedClientData, error: clientError } = await this.supabaseService
+        .getClient()
+        .from('clients')
+        .update(fieldsToUpdate)
+        .eq('id', id)
+        .select('*')
+        .single();
+
+      if (clientError) {
+        throw new Error(`Failed to update client: ${clientError.message}`);
+      }
+
+      // Update the users table if we have user fields
+      if (first_name || last_name || full_name || email) {
+        const userUpdates: any = {};
+        if (first_name !== undefined) userUpdates.first_name = first_name;
+        if (last_name !== undefined) userUpdates.last_name = last_name;
+        // Combine first_name and last_name into full_name if they exist
+        if (first_name || last_name) {
+          userUpdates.full_name = [first_name, last_name].filter(Boolean).join(' ');
+        } else if (full_name) {
+          userUpdates.full_name = full_name;
+        }
+        if (email) userUpdates.email = email;
+
+        const { error: userError } = await this.supabaseService
+          .getClient()
+          .from('users')
+          .update(userUpdates)
+          .eq('id', currentClient.user_id);
+
+        if (userError) {
+          throw new Error(`Failed to update user info: ${userError.message}`);
+        }
+      }
+
+      // Fetch the complete updated client with relations
+      const { data, error } = await this.supabaseService
+        .getClient()
+        .from('clients')
+        .select(`
+          *,
+          users!clients_user_id_fkey ( first_name, last_name, full_name, email )
+        `)
+        .eq('id', id)
+        .single();
+
+      if (error) {
+        throw new Error(`Failed to fetch updated client: ${error.message}`);
+      }
+
+      if (!data) {
+        throw new Error('No data returned from update');
+      }
+
+      const { users, ...updatedClient } = data;
+      const userData = Array.isArray(users) ? users[0] : users;
+
+      return {
+        ...updatedClient,
+        first_name: userData?.first_name ?? '',
+        last_name: userData?.last_name ?? '',
+        full_name: userData?.full_name ?? '',
+        email: userData?.email ?? '',
+        clinic_name: 'N/A',
+        // Map database alert field to alert_notes
+        alert_notes: updatedClient.alert,
+        // Map database communication fields to Client type fields
+        comm_email_ok: updatedClient.comm_appointment_notification ?? true,
+        comm_phone_ok: updatedClient.comm_mass_communication ?? true,
+        comm_sms_ok: updatedClient.comm_client_reminders ?? true,
+        comm_mail_ok: false,
+      };
+    } catch (error) {
+      throw error;
+    }
   }
 
-  async remove(id: string) {
+  async remove(id: string, user: UserContext) {
+    // Perform soft delete instead of hard delete
     const { error } = await this.supabaseService
       .getClient()
       .from('clients')
-      .delete()
+      .update({
+        status: 'deleted',
+        deleted_at: new Date().toISOString(),
+        ...(user.id && { deleted_by: user.id }),
+      })
       .eq('id', id);
 
     if (error) throw error;

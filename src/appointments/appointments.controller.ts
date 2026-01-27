@@ -21,13 +21,22 @@ export class AppointmentsController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  create(@Body(CleanDtoPipe) createAppointmentDto: CreateAppointmentDto) {
-    return this.appointmentsService.create(createAppointmentDto);
+  create(@Body(CleanDtoPipe) createAppointmentDto: CreateAppointmentDto, @GetUser() user: any) {
+    return this.appointmentsService.create(createAppointmentDto, user);
   }
 
   @Get()
   findAll() {
     return this.appointmentsService.findAll();
+  }
+
+  // More specific route must come BEFORE less specific route
+  @Get('clinic/:clinicId/status/:status')
+  findByStatus(
+    @Param('clinicId') clinicId: string,
+    @Param('status') status: 'requested' | 'scheduled' | 'checked_in' | 'in_progress' | 'completed' | 'cancelled' | 'no_show',
+  ) {
+    return this.appointmentsService.findByStatus(clinicId, status);
   }
 
   @Get('clinic/:clinicId')
@@ -53,13 +62,25 @@ export class AppointmentsController {
   update(
     @Param('id') id: string,
     @Body(CleanDtoPipe) updateAppointmentDto: UpdateAppointmentDto,
+    @GetUser() user: any,
   ) {
-    return this.appointmentsService.update(id, updateAppointmentDto);
+    return this.appointmentsService.update(id, updateAppointmentDto, user);
+  }
+
+  @Patch(':id/status')
+  updateStatus(
+    @Param('id') id: string,
+    @GetUser() user: any,
+    @Body('status') status: 'requested' | 'scheduled' | 'checked_in' | 'in_progress' | 'completed' | 'cancelled' | 'no_show',
+    @Body('vetId') vetId?: string,
+    @Body('notes') notes?: string,
+  ) {
+    return this.appointmentsService.updateStatus(id, status, user, vetId, notes);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.appointmentsService.remove(id);
+  remove(@Param('id') id: string, @GetUser() user: any) {
+    return this.appointmentsService.remove(id, user);
   }
 }
 
