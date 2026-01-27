@@ -1,0 +1,57 @@
+name: vetly-api
+region: sgp
+services:
+  - name: api
+    github:
+      repo: Vetlyllc/vetly-api
+      branch: main
+      deploy_on_push: true
+    dockerfile_path: Dockerfile
+    http_port: 3000
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    routes:
+      - path: /
+    health_check:
+      http_path: /api
+      initial_delay_seconds: 30
+      period_seconds: 30
+      timeout_seconds: 10
+      success_threshold: 1
+      failure_threshold: 3
+    envs:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+      - key: SUPABASE_URL
+        type: SECRET
+        value: ${SUPABASE_URL}
+      - key: SUPABASE_SERVICE_KEY
+        type: SECRET
+        value: ${SUPABASE_SERVICE_KEY}
+      - key: DEEPSEEK_API_KEY
+        type: SECRET
+        value: ${DEEPSEEK_API_KEY}
+      - key: OPENAI_API_KEY
+        type: SECRET
+        value: ${OPENAI_API_KEY}
+      - key: JWT_SECRET
+        type: SECRET
+        value: ${JWT_SECRET}
+      - key: REDIS_URL
+        type: SECRET
+        value: ${REDIS_URL}
+      - key: CORS_ORIGINS
+        value: ${CORS_ORIGINS}
+      - key: RATE_LIMIT_TTL
+        value: "60000"
+      - key: RATE_LIMIT_MAX
+        value: "100"
+
+databases:
+  - name: vetly-redis
+    engine: REDIS
+    version: "7"
+    size: db-s-dev-database
+    num_nodes: 1

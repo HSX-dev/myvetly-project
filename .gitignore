@@ -32,3 +32,9 @@ coverage/
 
 # Misc
 *.tgz
+
+# Docker
+.docker/
+
+# Environment backups
+.env.backup

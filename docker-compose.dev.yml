@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: vetly-api-dev
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+    env_file:
+      - .env.local
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      - redis
+    networks:
+      - vetly-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: vetly-redis-dev
+    ports:
+      - "6379:6379"
+    networks:
+      - vetly-network
+
+networks:
+  vetly-network:
+    driver: bridge

@@ -8,8 +8,31 @@ export class RedisService implements OnModuleDestroy {
 
   constructor(private configService: ConfigService) {
     const redisUrl = this.configService.get<string>('redis.url');
-    if (redisUrl) {
-      this.redis = new Redis(redisUrl);
+    const nodeEnv = this.configService.get<string>('nodeEnv');
+    
+    // Only connect to Redis if URL is provided
+    if (redisUrl && redisUrl !== 'redis://localhost:6379') {
+      try {
+        this.redis = new Redis(redisUrl, {
+          maxRetriesPerRequest: 3,
+          lazyConnect: true,
+          connectTimeout: 5000,
+        });
+        
+        this.redis.on('error', (err) => {
+          console.warn('Redis connection error (using in-memory fallback):', err.message);
+          this.redis = null;
+        });
+
+        this.redis.on('connect', () => {
+          console.log('✅ Redis connected successfully');
+        });
+      } catch (err) {
+        console.warn('Redis initialization failed (using in-memory fallback)');
+        this.redis = null;
+      }
+    } else {
+      console.log('📦 Redis not configured - using in-memory fallback (rate limiting disabled)');
     }
   }
 

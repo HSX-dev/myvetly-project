@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { RedisService } from '../cache/redis.service';
 import { DeepseekProvider } from './providers/deepseek.provider';
@@ -7,9 +7,17 @@ import { ChatRequestDto, ChatResponseDto } from './dto/chat.dto';
 import { HealthhubRequestDto, HealthhubResponseDto } from './dto/healthhub.dto';
 import { SoapExpandRequestDto, SoapExpandResponseDto } from './dto/soap.dto';
 import { v4 as uuidv4 } from 'uuid';
+import {
+  NotFoundException,
+  RateLimitException,
+  ExternalServiceException,
+  BadRequestException,
+} from '../common/exceptions';
 
 @Injectable()
 export class AiService {
+  private readonly logger = new Logger(AiService.name);
+
   constructor(
     private supabaseService: SupabaseService,
     private redisService: RedisService,
@@ -30,7 +38,7 @@ export class AiService {
       3600, // per hour
     );
     if (!rateLimit.allowed) {
-      throw new Error('Rate limit exceeded. Please try again later.');
+      throw new RateLimitException();
     }
 
     // Get pet context if pet_id provided
@@ -103,7 +111,7 @@ ${petContext ? `PET CONTEXT:\n${petContext}` : 'No specific pet context provided
       3600, // per hour
     );
     if (!rateLimit.allowed) {
-      throw new Error('Rate limit exceeded. Please try again later.');
+      throw new RateLimitException();
     }
 
     // Check cache (unless force refresh)
@@ -190,7 +198,7 @@ Respond with JSON in this exact format:
       3600, // per hour
     );
     if (!rateLimit.allowed) {
-      throw new Error('Rate limit exceeded. Please try again later.');
+      throw new RateLimitException();
     }
 
     const supabase = this.supabaseService.getClient();
@@ -203,7 +211,8 @@ Respond with JSON in this exact format:
       .single();
 
     if (error || !appointment) {
-      throw new Error('Appointment not found');
+      this.logger.warn(`Appointment not found: ${dto.appointment_id}`);
+      throw new NotFoundException('Appointment', dto.appointment_id);
     }
 
     // Build expansion prompt
