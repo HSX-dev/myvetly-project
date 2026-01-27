@@ -29,6 +29,7 @@ export class AiService {
   // CHAT (Pawla) - Migrated from pawla-chat Edge Function
   // ============================================
   async chat(dto: ChatRequestDto, userId: string): Promise<ChatResponseDto> {
+    const startTime = Date.now();
     const sessionId = dto.session_id || uuidv4();
 
     // Check rate limit
@@ -74,14 +75,19 @@ export class AiService {
       dto.message = `[Image Analysis: ${imageAnalysis.content}]\n\nUser question: ${dto.message}`;
     }
 
-    // Call DeepSeek for chat (reduced tokens for faster response)
-    const response = await this.deepseekProvider.chatWithRetry(
+    // Call OpenAI GPT-4o-mini for chat (faster than DeepSeek)
+    const aiStartTime = Date.now();
+    const response = await this.openaiProvider.chat(
       [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: dto.message },
       ],
-      { temperature: 0.7, maxTokens: 800 }, // Reduced from 1500 for faster response
+      { model: 'gpt-4o-mini', temperature: 0.7, maxTokens: 500 },
     );
+    
+    const totalTime = Date.now() - startTime;
+    const aiTime = Date.now() - aiStartTime;
+    this.logger.log(`Chat completed: total=${totalTime}ms, ai=${aiTime}ms (OpenAI)`);
 
     return {
       response: response.content,
@@ -91,16 +97,15 @@ export class AiService {
   }
 
   private buildChatSystemPrompt(petContext: string): string {
-    return `You are Pawla, a friendly and knowledgeable AI veterinary assistant. You help pet owners with questions about their pets' health, behavior, and care.
-
-IMPORTANT GUIDELINES:
-- Always be empathetic and supportive
-- Provide helpful information but always recommend consulting a veterinarian for serious concerns
-- Never diagnose conditions definitively - suggest possibilities and recommend professional evaluation
-- Be conversational and friendly
-- If you don't know something, admit it
-
-${petContext ? `PET CONTEXT:\n${petContext}` : 'No specific pet context provided.'}`;
+    // Shortened prompt for faster response
+    const basePrompt = `You are Pawla, a friendly AI vet assistant. Be helpful, empathetic, and recommend seeing a vet for serious concerns. Keep responses concise.`;
+    
+    if (petContext) {
+      // Truncate context to reduce tokens
+      const truncatedContext = petContext.length > 500 ? petContext.substring(0, 500) + '...' : petContext;
+      return `${basePrompt}\n\nPet info: ${truncatedContext}`;
+    }
+    return basePrompt;
   }
 
   // ============================================
