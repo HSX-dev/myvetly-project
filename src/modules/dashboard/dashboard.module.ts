@@ -1,0 +1,13 @@
+import { Module } from '@nestjs/common';
+import { DashboardService } from './dashboard.service';
+import { DashboardController } from './dashboard.controller';
+import { SupabaseModule } from '../../infrastructure/supabase/supabase.module';
+
+@Module({
+  imports: [SupabaseModule],
+  controllers: [DashboardController],
+  providers: [DashboardService],
+  exports: [DashboardService],
+})
+export class DashboardModule {}
+
