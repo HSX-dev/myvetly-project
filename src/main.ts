@@ -22,17 +22,12 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // Enable validation with environment-specific settings
+  // Enable validation
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
       transform: true,
-      transformOptions: {
-        excludeExtraneousValues: true,
-      },
-      // Show detailed error messages in development, generic in production
-      disableErrorMessages: isProduction,
-      forbidNonWhitelisted: isProduction, // Strict validation in production
+      forbidNonWhitelisted: false,
     }),
   );
 
