@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, NotFoundException, InternalServerErrorException, BadRequestException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { UserContext } from '../auth/auth.guard';
 import { CloseSessionDto } from './dto/close-session.dto';
+import { SendMessageDto } from './dto/send-message.dto';
 
 @Injectable()
 export class TelehealthService {
@@ -535,6 +536,92 @@ export class TelehealthService {
       console.error('Error sending closure notification message:', messageError);
       // Don't throw - session is already closed
     }
+  }
+
+  /**
+   * Send a message in a telehealth session
+   * Unlike the edge function, this allows messages for sessions without appointments (direct messaging)
+   */
+  async sendMessage(sendMessageDto: SendMessageDto, user: UserContext): Promise<any> {
+    const { session_id, content, message_type = 'text', media_url, file_name, file_size } = sendMessageDto;
+
+    // Validate that at least content or media_url is provided
+    if (!content && !media_url) {
+      throw new BadRequestException('Either content or media_url must be provided');
+    }
+
+    // Verify session exists and user has access
+    const session = await this.findOne(session_id, user);
+
+    // Check if session is closed (read-only)
+    if (session.status === 'completed' || session.status === 'cancelled') {
+      return {
+        success: false,
+        error: 'This consultation has been closed. Messages cannot be sent.',
+        readOnly: true,
+      };
+    }
+
+    // Determine sender_type based on user role
+    // If user is a client (user_id matches client's user_id), sender_type is 'client'
+    // Otherwise, sender_type is 'vet'
+    let sender_type: 'client' | 'vet' = 'vet';
+    
+    // Check if user is the client for this session
+    if (session.client?.users) {
+      const clientUser = Array.isArray(session.client.users) 
+        ? session.client.users[0] 
+        : session.client.users;
+      
+      if (clientUser?.id === user.user_id) {
+        sender_type = 'client';
+      }
+    }
+
+    // Insert the message
+    const messageData: any = {
+      session_id,
+      sender_id: user.user_id,
+      sender_type,
+      message_type,
+      is_read: false,
+    };
+
+    if (content) {
+      messageData.content = content;
+    }
+    if (media_url) {
+      messageData.media_url = media_url;
+    }
+    if (file_name) {
+      messageData.file_name = file_name;
+    }
+    if (file_size) {
+      messageData.file_size = file_size;
+    }
+
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('telehealth_messages')
+      .insert(messageData)
+      .select()
+      .single();
+
+    if (error) {
+      throw new InternalServerErrorException(`Failed to send message: ${error.message}`);
+    }
+
+    // Update session's updated_at timestamp
+    await this.supabaseService
+      .getClient()
+      .from('telehealth_sessions')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', session_id);
+
+    return {
+      success: true,
+      message: data,
+    };
   }
 
   /**
