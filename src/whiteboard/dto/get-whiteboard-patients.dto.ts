@@ -38,3 +38,4 @@ export class GetWhiteboardPatientsDto {
   location_group?: string;
 }
 
+

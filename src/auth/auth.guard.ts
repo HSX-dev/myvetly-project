@@ -97,40 +97,77 @@ export class AuthGuard implements CanActivate {
         console.log('AuthGuard: User profile loaded from cache', { authUserId });
       } else {
         // Cache miss - fetch from database (~40-50ms)
-        const { data: profileData, error: profileError } = await this.supabaseService
-          .getClient()
-          .from('users')
-          .select('id, role, role_id, organization_id, clinic_id, full_name, email')
-          .eq('auth_user_id', authUserId)
-          .single();
+        try {
+          const { data: profileData, error: profileError } = await this.supabaseService
+            .getClient()
+            .from('users')
+            .select('id, role, role_id, organization_id, clinic_id, full_name, email')
+            .eq('auth_user_id', authUserId)
+            .single();
 
-        if (profileError) {
-          // Log the error for debugging
-          console.error('User profile lookup error:', {
-            error: profileError,
-            authUserId,
-            message: profileError.message,
-            details: profileError.details,
-          });
-          throw new UnauthorizedException(`User profile not found: ${profileError.message}`);
+          if (profileError) {
+            // Check if it's a network/connection error
+            const isNetworkError = profileError.message?.includes('fetch failed') || 
+                                  profileError.message?.includes('timeout') ||
+                                  profileError.message?.includes('ECONNREFUSED') ||
+                                  profileError.message?.includes('ENOTFOUND');
+            
+            if (isNetworkError) {
+              // Network error - try to get from cache one more time (might have been cached by another request)
+              const cachedProfile = await this.redisService.getCachedUserProfile(authUserId);
+              if (cachedProfile) {
+                console.warn('AuthGuard: Network error, using cached profile', { authUserId });
+                userProfile = cachedProfile;
+              } else {
+                // No cached profile available - this is a critical error
+                console.error('User profile lookup network error (no cache available):', {
+                  error: profileError,
+                  authUserId,
+                  message: profileError.message,
+                });
+                throw new UnauthorizedException('Unable to verify user identity due to network error. Please try again.');
+              }
+            } else {
+              // Other database errors (user not found, etc.)
+              console.error('User profile lookup error:', {
+                error: profileError,
+                authUserId,
+                message: profileError.message,
+                details: profileError.details,
+              });
+              throw new UnauthorizedException(`User profile not found: ${profileError.message}`);
+            }
+          } else if (!profileData) {
+            console.error('User profile not found for auth_user_id:', authUserId);
+            throw new UnauthorizedException('User profile not found');
+          } else {
+            userProfile = profileData;
+
+            // Cache the profile for future requests (non-blocking)
+            this.redisService.cacheUserProfile(authUserId, userProfile, this.USER_PROFILE_CACHE_TTL)
+              .then(() => {
+                console.log('AuthGuard: User profile cached', { authUserId });
+              })
+              .catch((cacheError) => {
+                // Non-critical - log but don't fail the request
+                console.warn('AuthGuard: Failed to cache user profile', cacheError);
+              });
+          }
+        } catch (error) {
+          // If it's already an UnauthorizedException, re-throw it
+          if (error instanceof UnauthorizedException) {
+            throw error;
+          }
+          // For other errors (like network timeouts), try cache one more time
+          const cachedProfile = await this.redisService.getCachedUserProfile(authUserId);
+          if (cachedProfile) {
+            console.warn('AuthGuard: Error fetching profile, using cached profile', { authUserId, error: error.message });
+            userProfile = cachedProfile;
+          } else {
+            console.error('AuthGuard: Critical error - no profile and no cache', { authUserId, error });
+            throw new UnauthorizedException('Unable to verify user identity. Please try again.');
+          }
         }
-
-        if (!profileData) {
-          console.error('User profile not found for auth_user_id:', authUserId);
-          throw new UnauthorizedException('User profile not found');
-        }
-
-        userProfile = profileData;
-
-        // Cache the profile for future requests (non-blocking)
-        this.redisService.cacheUserProfile(authUserId, userProfile, this.USER_PROFILE_CACHE_TTL)
-          .then(() => {
-            console.log('AuthGuard: User profile cached', { authUserId });
-          })
-          .catch((cacheError) => {
-            // Non-critical - log but don't fail the request
-            console.warn('AuthGuard: Failed to cache user profile', cacheError);
-          });
       }
 
       // Verify token is not expired (basic check)

@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { SupabaseService } from '../supabase/supabase.service';
-import { CreateClientDto, UpdateClientDto } from './dto';
+import { CreateClientDto, UpdateClientDto, CreateClientNoteDto, UpdateClientNoteDto } from './dto';
 import { UserContext } from '../auth/auth.guard';
 
 @Injectable()
@@ -478,12 +478,121 @@ export class ClientsService {
     const { data, error } = await this.supabaseService
       .getClient()
       .from('appointments')
-      .select('*')
+      .select(`
+        id,
+        appointment_time,
+        service_type,
+        status,
+        pet_id,
+        vet_id,
+        notes,
+        pets (
+          id,
+          name,
+          species,
+          breed
+        ),
+        users!vet_id (
+          id,
+          full_name
+        )
+      `)
       .eq('client_id', clientId)
       .order('appointment_time', { ascending: false });
 
     if (error) throw error;
+    return data || [];
+  }
+
+  // Client Notes Methods
+  async getClientNotes(clientId: string) {
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('client_notes')
+      .select(`
+        *,
+        created_by_user:users!created_by(id, full_name)
+      `)
+      .eq('client_id', clientId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  }
+
+  async createClientNote(createNoteDto: CreateClientNoteDto, user: UserContext) {
+    // Validate required fields are present
+    if (!createNoteDto.client_id) {
+      throw new Error('client_id is required');
+    }
+    if (!createNoteDto.clinic_id) {
+      throw new Error('clinic_id is required');
+    }
+    if (!user.organization_id) {
+      throw new Error('organization_id is required (from user context)');
+    }
+    if (!createNoteDto.content) {
+      throw new Error('content is required');
+    }
+
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('client_notes')
+      .insert({
+        client_id: createNoteDto.client_id,
+        title: createNoteDto.title,
+        content: createNoteDto.content,
+        clinic_id: createNoteDto.clinic_id,
+        organization_id: user.organization_id, // Required by database - get from user context
+        created_by: user.user_id, // Use user_id from UserContext, not user.id
+      })
+      .select(`
+        *,
+        created_by_user:users!created_by(id, full_name)
+      `)
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to create client note: ${error.message}`);
+    }
+
     return data;
+  }
+
+  async updateClientNote(noteId: string, updateNoteDto: UpdateClientNoteDto) {
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('client_notes')
+      .update(updateNoteDto)
+      .eq('id', noteId)
+      .select(`
+        *,
+        created_by_user:users!created_by(id, full_name)
+      `)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        throw new NotFoundException(`Client note with id ${noteId} not found`);
+      }
+      throw new Error(`Failed to update client note: ${error.message}`);
+    }
+
+    return data;
+  }
+
+  async deleteClientNote(noteId: string) {
+    const { error } = await this.supabaseService
+      .getClient()
+      .from('client_notes')
+      .delete()
+      .eq('id', noteId);
+
+    if (error) {
+      throw new Error(`Failed to delete client note: ${error.message}`);
+    }
+
+    return { success: true };
   }
 }
 

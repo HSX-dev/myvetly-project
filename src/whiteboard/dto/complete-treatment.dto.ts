@@ -6,3 +6,4 @@ export class CompleteTreatmentDto {
   notes?: string;
 }
 
+
