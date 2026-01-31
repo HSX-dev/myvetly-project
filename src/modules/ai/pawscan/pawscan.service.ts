@@ -34,10 +34,25 @@ export class PawscanService extends BaseAiService {
     const pet = await this.getPetById(dto.pet_id!, 'id, client_id, name, species, breed, sex, weight, birth_date');
 
     const userPrompt = this.buildUserPrompt(dto.answers, pet);
-    const response = await this.callOpenAI(AI_PROMPTS.PAWSCAN_SYSTEM, userPrompt, {
-      temperature: 0.3,
-      maxTokens: 1000,
-    });
+
+    // Use vision model if images provided, otherwise use text model
+    let response;
+    let modelUsed: string;
+
+    if (dto.media && dto.media.length > 0) {
+      response = await this.analyzeWithImages(
+        AI_PROMPTS.PAWSCAN_SYSTEM,
+        userPrompt,
+        dto.media,
+      );
+      modelUsed = 'gpt-4o';
+    } else {
+      response = await this.callOpenAI(AI_PROMPTS.PAWSCAN_SYSTEM, userPrompt, {
+        temperature: 0.3,
+        maxTokens: 1000,
+      });
+      modelUsed = 'gpt-4o-mini';
+    }
 
     const result = this.parseJsonResponse(response.content);
     this.ensureSeverityFields(result);
@@ -48,7 +63,7 @@ export class PawscanService extends BaseAiService {
       .insert({
         client_id: pet.client_id,
         pet_id: dto.pet_id,
-        model_used: 'gpt-4o-mini',
+        model_used: modelUsed,
         prompt: dto.answers,
         ai_response: result,
         severity: result.severity_label,
@@ -61,6 +76,7 @@ export class PawscanService extends BaseAiService {
         status: 'completed',
         latency_ms: Date.now() - startTime,
         risk_flags: result.risk_flags || [],
+        media_urls: dto.media || [],
       })
       .select('id')
       .single();
@@ -79,7 +95,7 @@ export class PawscanService extends BaseAiService {
       treatment_guide: null,
       risk_flags: result.risk_flags,
       confidence_score: result.confidence_score,
-      model_used: 'gpt-4o-mini',
+      model_used: modelUsed,
       latency_ms: Date.now() - startTime,
       cost_usd: 0,
     };
@@ -144,19 +160,59 @@ Generate practical home care guidance. Return JSON:
     };
   }
 
+  /**
+   * Analyze symptoms with image support using OpenAI Vision
+   */
+  private async analyzeWithImages(
+    systemPrompt: string,
+    userPrompt: string,
+    mediaUrls: string[],
+  ): Promise<{ content: string; tokensUsed: number }> {
+    // Use first image for analysis (can extend to multiple later)
+    const imageUrl = mediaUrls[0];
+
+    const fullPrompt = `${systemPrompt}
+
+${userPrompt}
+
+IMPORTANT: Analyze the attached image for any visible symptoms, injuries, skin conditions, or abnormalities that may help with the assessment. Include observations from the image in your diagnosis.`;
+
+    return this.openaiProvider.analyzeImage(imageUrl, fullPrompt, {
+      model: 'gpt-4o',
+      maxTokens: 1200,
+    });
+  }
+
   private buildUserPrompt(answers: any, pet: any): string {
+    const age = pet.birth_date ? this.calculateAge(pet.birth_date) : 'Unknown';
+
     return `SYMPTOM ANALYSIS
 
-PET: ${pet.name} (${pet.species}, ${pet.breed}, ${pet.sex}, ${pet.weight}kg)
+PET PROFILE:
+- Name: ${pet.name}
+- Species: ${pet.species}
+- Breed: ${pet.breed}
+- Sex: ${pet.sex || 'Unknown'}
+- Weight: ${pet.weight}kg
+- Age: ${age}
 
-COMPLAINT: ${answers?.complaint || answers?.symptoms || 'Not specified'}
-STARTED: ${answers?.when_started || answers?.duration || 'Unknown'}
-APPETITE: ${answers?.appetite || 'Unknown'}
-ENERGY: ${answers?.energy_level || 'Unknown'}
-WORSENING: ${answers?.getting_worse ? 'Yes' : 'No'}
-OTHER: ${answers?.other_symptoms?.join(', ') || 'None'}
+SYMPTOMS REPORTED:
+- Category: ${answers?.category || 'General'}
+- Complaint: ${answers?.complaint || answers?.symptoms || 'Not specified'}
+- Started: ${answers?.when_started || answers?.duration || 'Unknown'}
+- Getting Worse: ${answers?.getting_worse ? 'Yes' : 'No'}
 
-Analyze and return JSON only.`;
+VITAL SIGNS & BEHAVIOR:
+- Appetite: ${answers?.appetite || 'Unknown'}
+- Water Intake: ${answers?.water_intake || 'Unknown'}
+- Energy Level: ${answers?.energy_level || 'Unknown'}
+- Digestive Issues: ${answers?.digestive_issues || 'None'}
+
+ADDITIONAL INFO:
+- Current Medications: ${answers?.medications || 'None'}
+- Other Symptoms: ${answers?.other_symptoms?.join(', ') || 'None'}
+
+Analyze symptoms and return JSON only.`;
   }
 
   private ensureSeverityFields(result: any): void {

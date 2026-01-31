@@ -80,4 +80,92 @@ export class OpenaiProvider {
       tokensUsed: response.usage?.total_tokens || 0,
     };
   }
+
+  /**
+   * Chat with vision support for multiple images
+   * Combines system prompt, user message, and multiple images in one request
+   */
+  async chatWithVision(
+    systemPrompt: string,
+    userMessage: string,
+    images: string[],
+    chatHistory: AiChatMessage[] = [],
+    options: AiChatOptions = {},
+  ): Promise<AiChatResponse> {
+    const { model = 'gpt-4o', temperature = 0.7, maxTokens = 1000 } = options;
+
+    // Build image content parts
+    const imageContent = images.map((img) => ({
+      type: 'image_url' as const,
+      image_url: {
+        url: img.startsWith('data:') || img.startsWith('http')
+          ? img
+          : `data:image/jpeg;base64,${img}`,
+      },
+    }));
+
+    // Build messages array
+    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+      { role: 'system', content: systemPrompt },
+      // Add chat history (excluding system messages)
+      ...chatHistory
+        .filter((msg) => msg.role !== 'system')
+        .map((msg) => ({
+          role: msg.role as 'user' | 'assistant',
+          content: msg.content,
+        })),
+      // Current user message with images
+      {
+        role: 'user',
+        content: [{ type: 'text', text: userMessage }, ...imageContent],
+      },
+    ];
+
+    const response = await this.openai.chat.completions.create({
+      model,
+      messages,
+      temperature,
+      max_tokens: maxTokens,
+    });
+
+    return {
+      content: response.choices[0]?.message?.content || '',
+      tokensUsed: response.usage?.total_tokens || 0,
+    };
+  }
+
+  /**
+   * Chat with conversation history (text only)
+   */
+  async chatWithHistory(
+    systemPrompt: string,
+    userMessage: string,
+    chatHistory: AiChatMessage[] = [],
+    options: AiChatOptions = {},
+  ): Promise<AiChatResponse> {
+    const { model = 'gpt-4o-mini', temperature = 0.7, maxTokens = 1000 } = options;
+
+    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+      { role: 'system', content: systemPrompt },
+      ...chatHistory
+        .filter((msg) => msg.role !== 'system')
+        .map((msg) => ({
+          role: msg.role as 'user' | 'assistant',
+          content: msg.content,
+        })),
+      { role: 'user', content: userMessage },
+    ];
+
+    const response = await this.openai.chat.completions.create({
+      model,
+      messages,
+      temperature,
+      max_tokens: maxTokens,
+    });
+
+    return {
+      content: response.choices[0]?.message?.content || '',
+      tokensUsed: response.usage?.total_tokens || 0,
+    };
+  }
 }
