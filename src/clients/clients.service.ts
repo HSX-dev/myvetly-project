@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, InternalServerErrorException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreateClientDto, UpdateClientDto, CreateClientNoteDto, UpdateClientNoteDto } from './dto';
@@ -72,6 +72,85 @@ export class ClientsService {
         // Return all client fields from the database, plus user info and pets
         return {
           ...item, // Include all fields from clients table
+          first_name: user?.first_name ?? '',
+          last_name: user?.last_name ?? '',
+          full_name: user?.full_name ?? '',
+          email: user?.email ?? '',
+          clinic_name: item.clinic_name || 'N/A',
+          pet_names: pets, // Store pets array for table display
+        };
+      })
+      .filter(client => client.id); // Ensure we only return clients with valid IDs
+
+    return clients;
+  }
+
+  /**
+   * Get all clients including deleted ones
+   */
+  async findAllIncludingDeleted(user: UserContext) {
+    const organizationId = user.organization_id;
+    const role = user.role;
+
+    let query = this.supabaseService
+      .getClient()
+      .from('clients')
+      .select(`
+        *,
+        users!clients_user_id_fkey ( first_name, last_name, full_name, email )
+      `);
+
+    // Include deleted clients - don't filter them out
+
+    // Only super_admin can see all clients across organizations
+    // All other roles (including clinic_admin) should be filtered by organization
+    if (role !== 'super_admin') {
+      if (!organizationId) {
+        return [];
+      }
+      // Include clients with matching organization_id OR null organization_id
+      query = query.or(`organization_id.eq.${organizationId},organization_id.is.null`);
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      return [];
+    }
+
+    // Get all client IDs to fetch pets
+    const clientIds = data.map(item => item.id);
+    
+    // Fetch pets for all clients
+    const { data: petsData } = await this.supabaseService
+      .getClient()
+      .from('pets')
+      .select('id, name, client_id')
+      .in('client_id', clientIds);
+
+    // Create a map of client_id to pets
+    const petsByClientId = new Map<string, Array<{ id: string; name: string }>>();
+    if (petsData) {
+      petsData.forEach(pet => {
+        if (pet.client_id) {
+          if (!petsByClientId.has(pet.client_id)) {
+            petsByClientId.set(pet.client_id, []);
+          }
+          petsByClientId.get(pet.client_id)!.push({ id: pet.id, name: pet.name || 'Unnamed Pet' });
+        }
+      });
+    }
+
+    // Map the data to match frontend Client type
+    const clients = data
+      .map(item => {
+        const user = Array.isArray(item.users) ? item.users[0] : item.users;
+        const pets = petsByClientId.get(item.id) || [];
+
+        // Return all client fields from the database, plus user info and pets
+        return {
+          ...item, // Include all fields from clients table (including status, deleted_at, deleted_by)
           first_name: user?.first_name ?? '',
           last_name: user?.last_name ?? '',
           full_name: user?.full_name ?? '',
@@ -460,6 +539,93 @@ export class ClientsService {
       .eq('id', id);
 
     if (error) throw error;
+    return { success: true };
+  }
+
+  /**
+   * Restore a soft-deleted client (change status from 'deleted' to 'active')
+   */
+  async restore(id: string, user: UserContext) {
+    // Get the client to validate access
+    const client = await this.findOne(id);
+
+    // RLS Validation: Check if user can restore this client
+    if (user.role !== 'super_admin') {
+      if (user.role === 'org_admin') {
+        // Org admin can only restore clients in their organization
+        if (client.organization_id !== user.organization_id) {
+          throw new ForbiddenException('Access denied: Cannot restore clients outside your organization');
+        }
+      } else {
+        // Clinic admin and below can only restore clients in their clinic
+        if (client.organization_id !== user.organization_id || 
+            client.clinic_id !== user.clinic_id) {
+          throw new ForbiddenException('Access denied: Cannot restore clients outside your clinic');
+        }
+      }
+    }
+
+    // Restore by setting status to 'active' and clearing deleted fields
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('clients')
+      .update({ 
+        status: 'active',
+        deleted_at: null,
+        deleted_by: null,
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error restoring client:', error);
+      throw new InternalServerErrorException(
+        `Failed to restore client: ${error.message || 'Unknown error'}`,
+      );
+    }
+
+    return { success: true, data };
+  }
+
+  /**
+   * Permanently delete a client (hard delete)
+   * WARNING: This permanently removes the client from the database
+   */
+  async hardDelete(id: string, user: UserContext) {
+    // Get the client to validate access
+    const client = await this.findOne(id);
+
+    // RLS Validation: Check if user can permanently delete this client
+    if (user.role !== 'super_admin') {
+      if (user.role === 'org_admin') {
+        // Org admin can only delete clients in their organization
+        if (client.organization_id !== user.organization_id) {
+          throw new ForbiddenException('Access denied: Cannot permanently delete clients outside your organization');
+        }
+      } else {
+        // Clinic admin and below can only delete clients in their clinic
+        if (client.organization_id !== user.organization_id || 
+            client.clinic_id !== user.clinic_id) {
+          throw new ForbiddenException('Access denied: Cannot permanently delete clients outside your clinic');
+        }
+      }
+    }
+
+    // Hard delete - permanently remove from database
+    const { error } = await this.supabaseService
+      .getClient()
+      .from('clients')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error permanently deleting client:', error);
+      throw new InternalServerErrorException(
+        `Failed to permanently delete client: ${error.message || 'Unknown error'}`,
+      );
+    }
+
     return { success: true };
   }
 

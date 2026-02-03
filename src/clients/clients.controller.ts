@@ -29,6 +29,11 @@ export class ClientsController {
     return this.clientsService.findAll(user);
   }
 
+  @Get('deleted')
+  findAllIncludingDeleted(@GetUser() user: any) {
+    return this.clientsService.findAllIncludingDeleted(user);
+  }
+
   // Client Notes Routes - Must be before :id route to avoid conflicts
   @Get(':id/notes')
   getClientNotes(@Param('id') id: string) {
@@ -92,6 +97,18 @@ export class ClientsController {
   @Delete(':id')
   remove(@Param('id') id: string, @GetUser() user: any) {
     return this.clientsService.remove(id, user);
+  }
+
+  @Post(':id/restore')
+  @HttpCode(HttpStatus.OK)
+  restore(@Param('id') id: string, @GetUser() user: any) {
+    return this.clientsService.restore(id, user);
+  }
+
+  @Delete(':id/permanent')
+  @HttpCode(HttpStatus.OK)
+  hardDelete(@Param('id') id: string, @GetUser() user: any) {
+    return this.clientsService.hardDelete(id, user);
   }
 }
 

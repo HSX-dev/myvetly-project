@@ -60,5 +60,14 @@ export class CreateUserDto {
   @IsString()
   @IsOptional()
   timezone?: string;
+
+  @Expose()
+  @IsString()
+  @IsOptional()
+  password?: string;
+
+  @Expose()
+  @IsOptional()
+  inviteOnly?: boolean;
 }
 
