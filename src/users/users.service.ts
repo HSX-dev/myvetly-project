@@ -62,6 +62,61 @@ export class UsersService {
   }
 
   /**
+   * Get all users including deleted ones with RLS filtering
+   */
+  async findAllIncludingDeleted(user: UserContext) {
+    const userQuery = `
+      id,
+      auth_user_id,
+      email,
+      full_name,
+      first_name,
+      last_name,
+      role,
+      role_id,
+      role_name,
+      organization_id,
+      clinic_id,
+      status,
+      created_at,
+      deleted_at,
+      deleted_by,
+      has_set_password,
+      organizations!users_organization_id_fkey(id, name),
+      clinics!users_clinic_id_fkey(id, name)
+    `;
+
+    let query = this.supabaseService
+      .getClient()
+      .from('users')
+      .select(userQuery);
+
+    // IMPORTANT: Exclude clients - User Management is for staff only
+    query = query.neq('role', 'client');
+
+    // Apply RLS filtering based on user role
+    if (user.role === 'org_admin') {
+      query = query.eq('organization_id', user.organization_id);
+    } else if (user.role !== 'super_admin') {
+      query = query
+        .eq('organization_id', user.organization_id)
+        .eq('clinic_id', user.clinic_id);
+    }
+    // super_admin: no filtering applied
+
+    const { data, error } = await query.order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching users including deleted:', error);
+      throw new InternalServerErrorException(
+        `Failed to fetch users: ${error.message || 'Unknown error'}`,
+      );
+    }
+
+    return data || [];
+  }
+
+  /**
    * Get a single user by ID with RLS filtering
    */
   async findOne(id: string, user: UserContext) {
@@ -129,9 +184,8 @@ export class UsersService {
   }
 
   /**
-   * Create a new user
-   * Note: This only creates the user record in the users table.
-   * Auth user creation (auth.users) should be handled by frontend Edge Functions.
+   * Create a new user with auth user creation and invitation email
+   * This replaces the Edge Function functionality in the backend
    */
   async create(createUserDto: CreateUserDto, user: UserContext) {
     // RLS Validation: Check if user can create users in the specified org/clinic
@@ -166,10 +220,153 @@ export class UsersService {
       }
     }
 
+    // Step 1: Create auth user using Supabase Admin API
+    let authUserId: string;
+    let alreadyExisted = false;
+
+    try {
+      // Try to create new auth user
+      // If user already exists, we'll catch the error and handle it
+      const { data: newAuthUser, error: authError } = await this.supabaseService
+        .getClient()
+        .auth.admin.createUser({
+          email: createUserDto.email,
+          password: createUserDto.password || undefined,
+          email_confirm: !createUserDto.inviteOnly, // Auto-confirm if password provided
+          user_metadata: {
+            first_name: updateData.first_name,
+            last_name: updateData.last_name,
+          },
+        });
+
+      if (authError) {
+        // Check if error is due to user already existing
+        if (authError.message?.includes('already registered') || 
+            authError.message?.includes('already exists') ||
+            authError.message?.includes('User already registered')) {
+          // User already exists, try to get their ID by attempting to invite them
+          // This will return the existing user
+          const { data: existingUserData, error: inviteError } = await this.supabaseService
+            .getClient()
+            .auth.admin.inviteUserByEmail(createUserDto.email);
+
+          if (inviteError || !existingUserData?.user?.id) {
+            // If we can't get the user, try listing users (with pagination for efficiency)
+            const { data: usersList } = await this.supabaseService
+              .getClient()
+              .auth.admin.listUsers({ page: 1, perPage: 1000 });
+
+            const existingUser = usersList?.users?.find(
+              (u: any) => u.email === createUserDto.email,
+            );
+
+            if (existingUser) {
+              authUserId = existingUser.id;
+              alreadyExisted = true;
+              console.log('Auth user already exists:', authUserId);
+            } else {
+              throw new InternalServerErrorException(
+                `User with email ${createUserDto.email} may already exist, but could not retrieve user ID`,
+              );
+            }
+          } else {
+            authUserId = existingUserData.user.id;
+            alreadyExisted = true;
+            console.log('Auth user already exists:', authUserId);
+          }
+        } else {
+          throw new InternalServerErrorException(
+            `Failed to create auth user: ${authError.message}`,
+          );
+        }
+      } else {
+        // User created successfully
+        if (!newAuthUser?.user?.id) {
+          throw new InternalServerErrorException('Failed to create auth user: No user ID returned');
+        }
+
+        authUserId = newAuthUser.user.id;
+
+        // Send invitation email if inviteOnly is true
+        if (createUserDto.inviteOnly && !createUserDto.password) {
+          // Use inviteUserByEmail to send invitation email
+          const { data: inviteData, error: inviteError } = await this.supabaseService
+            .getClient()
+            .auth.admin.inviteUserByEmail(createUserDto.email, {
+              data: {
+                first_name: updateData.first_name,
+                last_name: updateData.last_name,
+              },
+            });
+
+          if (inviteError) {
+            console.warn('Failed to send invitation email:', inviteError);
+            // Don't throw - user was created successfully, email can be sent later
+          } else {
+            console.log('Invitation email sent successfully');
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error('Error creating auth user:', error);
+      if (error instanceof InternalServerErrorException) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        `Failed to create auth user: ${error.message || 'Unknown error'}`,
+      );
+    }
+
+    // Step 2: Check if user record already exists in users table
+    const { data: existingUserRecord, error: checkError } = await this.supabaseService
+      .getClient()
+      .from('users')
+      .select(`
+        id,
+        auth_user_id,
+        email,
+        full_name,
+        first_name,
+        last_name,
+        role,
+        role_id,
+        role_name,
+        organization_id,
+        clinic_id,
+        status,
+        created_at,
+        has_set_password,
+        organizations!users_organization_id_fkey(id, name),
+        clinics!users_clinic_id_fkey(id, name)
+      `)
+      .eq('auth_user_id', authUserId)
+      .single();
+
+    if (existingUserRecord) {
+      // User record already exists, return it
+      console.log('User record already exists:', existingUserRecord.id);
+      return {
+        ...existingUserRecord,
+        already_existed: true,
+        auth_user_id: authUserId,
+      };
+    }
+
+    // Step 3: Create user record in users table (only if it doesn't exist)
+    // Explicitly exclude password and inviteOnly (these are not database columns)
+    // Note: confirm_password is not in updateData, so we only exclude password and inviteOnly
+    const { password, inviteOnly, ...userRecordData } = updateData;
+    
+    const finalUserRecordData = {
+      ...userRecordData,
+      auth_user_id: authUserId,
+      has_set_password: !!createUserDto.password,
+    };
+
     const { data, error } = await this.supabaseService
       .getClient()
       .from('users')
-      .insert(updateData)
+      .insert(finalUserRecordData)
       .select(`
         id,
         auth_user_id,
@@ -191,12 +388,62 @@ export class UsersService {
       .single();
 
     if (error) {
-      console.error('Error creating user:', error);
+      console.error('Error creating user record:', error);
+      
+      // Check if error is due to duplicate key (race condition)
+      if (error.code === '23505' && error.message?.includes('auth_user_id')) {
+        // User record was created by another request, fetch it
+        const { data: raceConditionUser } = await this.supabaseService
+          .getClient()
+          .from('users')
+          .select(`
+            id,
+            auth_user_id,
+            email,
+            full_name,
+            first_name,
+            last_name,
+            role,
+            role_id,
+            role_name,
+            organization_id,
+            clinic_id,
+            status,
+            created_at,
+            has_set_password,
+            organizations!users_organization_id_fkey(id, name),
+            clinics!users_clinic_id_fkey(id, name)
+          `)
+          .eq('auth_user_id', authUserId)
+          .single();
+
+        if (raceConditionUser) {
+          return {
+            ...raceConditionUser,
+            already_existed: true,
+            auth_user_id: authUserId,
+          };
+        }
+      }
+
+      // If user record creation fails, try to clean up auth user (optional)
+      if (!alreadyExisted) {
+        try {
+          await this.supabaseService.getClient().auth.admin.deleteUser(authUserId);
+        } catch (cleanupError) {
+          console.error('Failed to cleanup auth user:', cleanupError);
+        }
+      }
       throw new InternalServerErrorException(
-        `Failed to create user: ${error.message || 'Unknown error'}`,
+        `Failed to create user record: ${error.message || 'Unknown error'}`,
       );
     }
-    return data;
+
+    return {
+      ...data,
+      already_existed: alreadyExisted,
+      auth_user_id: authUserId,
+    };
   }
 
   /**
@@ -329,6 +576,98 @@ export class UsersService {
     }
 
     return { success: true, data };
+  }
+
+  /**
+   * Restore a soft-deleted user (change status from 'deleted' to 'active')
+   */
+  async restore(id: string, user: UserContext) {
+    // First, get the target user to validate access
+    const targetUser = await this.findOne(id, user);
+
+    // RLS Validation: Check if user can restore this specific user
+    if (user.role === 'super_admin') {
+      // Super admin can restore any user
+    } else if (user.role === 'org_admin') {
+      // Org admin can only restore users in their organization
+      if (targetUser.organization_id !== user.organization_id) {
+        throw new ForbiddenException('Access denied: Cannot restore users outside your organization');
+      }
+    } else {
+      // Clinic admin and below can only restore users in their clinic
+      if (targetUser.organization_id !== user.organization_id || 
+          targetUser.clinic_id !== user.clinic_id) {
+        throw new ForbiddenException('Access denied: Cannot restore users outside your clinic');
+      }
+    }
+
+    // Restore by setting status to 'active' and clearing deleted fields
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('users')
+      .update({ 
+        status: 'active',
+        deleted_at: null,
+        deleted_by: null,
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error restoring user:', error);
+      throw new InternalServerErrorException(
+        `Failed to restore user: ${error.message || 'Unknown error'}`,
+      );
+    }
+
+    return { success: true, data };
+  }
+
+  /**
+   * Permanently delete a user (hard delete)
+   * WARNING: This permanently removes the user from the database
+   */
+  async hardDelete(id: string, user: UserContext) {
+    // First, get the target user to validate access
+    const targetUser = await this.findOne(id, user);
+
+    // Prevent self-deletion
+    if (targetUser.auth_user_id === user.auth_user_id) {
+      throw new ForbiddenException('Cannot permanently delete your own account');
+    }
+
+    // RLS Validation: Check if user can permanently delete this specific user
+    if (user.role === 'super_admin') {
+      // Super admin can delete any user
+    } else if (user.role === 'org_admin') {
+      // Org admin can only delete users in their organization
+      if (targetUser.organization_id !== user.organization_id) {
+        throw new ForbiddenException('Access denied: Cannot permanently delete users outside your organization');
+      }
+    } else {
+      // Clinic admin and below can only delete users in their clinic
+      if (targetUser.organization_id !== user.organization_id || 
+          targetUser.clinic_id !== user.clinic_id) {
+        throw new ForbiddenException('Access denied: Cannot permanently delete users outside your clinic');
+      }
+    }
+
+    // Hard delete - permanently remove from database
+    const { error } = await this.supabaseService
+      .getClient()
+      .from('users')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error permanently deleting user:', error);
+      throw new InternalServerErrorException(
+        `Failed to permanently delete user: ${error.message || 'Unknown error'}`,
+      );
+    }
+
+    return { success: true };
   }
 
   async getCurrentUserProfile(user: any) {

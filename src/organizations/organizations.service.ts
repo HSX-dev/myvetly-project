@@ -10,7 +10,14 @@ export class OrganizationsService {
     const { data, error } = await this.supabaseService
       .getClient()
       .from('organizations')
-      .select('*');
+      .select(`
+        *,
+        clinics (
+          id,
+          name,
+          subdomain
+        )
+      `);
 
     if (error) throw error;
     return data;
