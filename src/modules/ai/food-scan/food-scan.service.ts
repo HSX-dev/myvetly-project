@@ -11,6 +11,7 @@ import {
   getPawMDScoreLabel,
 } from './food-scan.dto';
 import { BadRequestException } from '../../../common/exceptions';
+import { fetchImagesAsBase64 } from '../shared/image-utils';
 
 @Injectable()
 export class FoodScanService extends BaseAiService {
@@ -28,7 +29,7 @@ export class FoodScanService extends BaseAiService {
     userId: string,
   ): Promise<FoodScanResponseDto> {
     const startTime = Date.now();
-
+    try {
     await this.checkRateLimit(
       `rate:foodscan:${userId}`,
       RATE_LIMITS.FOOD_SCAN.maxRequests,
@@ -49,11 +50,12 @@ export class FoodScanService extends BaseAiService {
     let modelUsed: string;
 
     if (dto.image_urls && dto.image_urls.length > 0) {
-      // Use GPT-4o vision for image analysis
+      // Fetch images as base64 so OpenAI doesn't timeout downloading from Supabase
+      const imageBase64 = await fetchImagesAsBase64(dto.image_urls);
       response = await this.analyzeWithImages(
         AI_PROMPTS.FOOD_SCAN_SYSTEM,
         userPrompt,
-        dto.image_urls,
+        imageBase64,
       );
       modelUsed = 'gpt-4o';
     } else {
@@ -77,8 +79,9 @@ export class FoodScanService extends BaseAiService {
     // Calculate cost
     const cost = this.calculateCost(response.tokensUsed, modelUsed);
 
-    // Store scan in database
-    const { data: scan } = await this.getSupabase()
+    // Store scan in database (optional - return analysis even if insert fails)
+    let scanId = '';
+    const { data: scan, error: insertError } = await this.getSupabase()
       .from('food_scans')
       .insert({
         client_id: pet.client_id,
@@ -105,15 +108,30 @@ export class FoodScanService extends BaseAiService {
       .select('id')
       .single();
 
+    if (insertError) {
+      this.logger.warn(
+        `FoodScan DB insert failed (returning analysis anyway): ${insertError.message}. Code: ${insertError.code}. Details: ${JSON.stringify(insertError.details)}`,
+      );
+    } else {
+      scanId = scan?.id || '';
+    }
+
     this.logTiming('FoodScan analyze', startTime);
 
     return {
-      scan_id: scan?.id || '',
+      scan_id: scanId,
       analysis: result,
       latency_ms: latency,
       cost_usd: cost,
       model: modelUsed,
     };
+    } catch (err: any) {
+      this.logger.error(
+        `FoodScan analyze failed: ${err?.message}`,
+        err?.stack,
+      );
+      throw err;
+    }
   }
 
   /**
@@ -122,7 +140,7 @@ export class FoodScanService extends BaseAiService {
   private async analyzeWithImages(
     systemPrompt: string,
     userPrompt: string,
-    imageUrls: string[],
+    images: string[], // base64 data URLs or URLs
   ): Promise<{ content: string; tokensUsed: number }> {
     const fullPrompt = `${userPrompt}
 
@@ -132,7 +150,7 @@ IMPORTANT: Analyze the attached image(s) to identify the food item or ingredient
     return this.openaiProvider.chatWithVision(
       systemPrompt,
       fullPrompt,
-      imageUrls,
+      images,
       [], // No chat history for food scan
       {
         model: 'gpt-4o',

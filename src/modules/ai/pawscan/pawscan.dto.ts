@@ -2,8 +2,8 @@ import { IsString, IsOptional, IsArray, IsObject, IsEnum } from 'class-validator
 
 export class PawScanRequestDto {
   @IsOptional()
-  @IsEnum(['analyze', 'generate_treatment'])
-  mode?: 'analyze' | 'generate_treatment';
+  @IsEnum(['analyze', 'follow_up', 'generate_treatment'])
+  mode?: 'analyze' | 'follow_up' | 'generate_treatment';
 
   @IsOptional()
   @IsString()
@@ -34,6 +34,10 @@ export class PawScanRequestDto {
   @IsOptional()
   @IsString()
   session_id?: string;
+
+  @IsOptional()
+  @IsObject()
+  follow_up_answers?: Record<string, string>;
 }
 
 export interface TreatmentGuide {
@@ -44,8 +48,28 @@ export interface TreatmentGuide {
   lifestyle_modifications: string[];
 }
 
+export interface FollowUpQuestion {
+  id: string;
+  question: string;
+  type: 'single_choice' | 'multiple_choice' | 'text';
+  options?: string[];
+}
+
+// Response when follow-up questions are needed
+export class PawScanFollowUpRequiredDto {
+  session_id: string;
+  phase: 'follow_up_required';
+  preliminary_assessment: string;
+  follow_up_questions: FollowUpQuestion[];
+  confidence_score: number;
+  model_used: string;
+  latency_ms: number;
+}
+
+// Response with complete analysis (no follow-up needed or after follow-up)
 export class PawScanResponseDto {
   session_id: string;
+  phase?: 'completed';
   severity_score: number;
   severity_label: 'low' | 'medium' | 'high' | 'critical';
   vet_action: 'monitor' | 'see_vet' | 'urgent_care';
@@ -60,6 +84,9 @@ export class PawScanResponseDto {
   latency_ms: number;
   cost_usd: number;
 }
+
+// Union type for analyze responses
+export type PawScanAnalyzeResponse = PawScanResponseDto | PawScanFollowUpRequiredDto;
 
 export class PawScanTreatmentResponseDto {
   treatment_guide: TreatmentGuide;

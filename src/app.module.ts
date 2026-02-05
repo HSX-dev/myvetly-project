@@ -37,7 +37,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     ConfigModule.forRoot({
       isGlobal: true,
       load: [configuration],
-      envFilePath: ['.env.local', '.env'],
+      envFilePath: ['.env.local', '.env.development', '.env'],
     }),
     ThrottlerModule.forRoot([
       {

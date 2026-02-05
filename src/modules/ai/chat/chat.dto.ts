@@ -25,6 +25,10 @@ export class ChatRequestDto {
   @IsOptional()
   @IsBoolean()
   stream?: boolean;
+
+  @IsOptional()
+  @IsString()
+  pawscan_context?: string; // JSON string of PawScan results for context
 }
 
 export interface ChatMetadata {

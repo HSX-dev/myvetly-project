@@ -10,6 +10,7 @@ import { BaseAiService } from '../shared/base-ai.service';
 import { AI_PROMPTS, RATE_LIMITS } from '../shared/prompts.constants';
 import { ChatRequestDto, ChatResponseDto, ChatMetadata } from './chat.dto';
 import { processDocuments } from '../shared/document-utils';
+import { fetchImagesAsBase64 } from '../shared/image-utils';
 import { v4 as uuidv4 } from 'uuid';
 
 const MAX_CONTEXT_MESSAGES = 20;
@@ -54,8 +55,8 @@ export class ChatService extends BaseAiService {
     // Get chat history
     const chatHistory = await this.getChatHistory(sessionId);
 
-    // Build system prompt with pet context
-    const systemPrompt = this.buildSystemPrompt(petContext);
+    // Build system prompt with pet context and optional PawScan context
+    const systemPrompt = this.buildSystemPrompt(petContext, dto.pawscan_context);
 
     // Process documents if provided
     let documentContent = '';
@@ -77,12 +78,15 @@ export class ChatService extends BaseAiService {
       document_count: dto.documents?.length || 0,
     });
 
-    // Call AI with fallback logic
+    // Resolve image URLs to base64 so OpenAI doesn't timeout downloading (e.g. Supabase)
     const hasImages = !!(dto.images && dto.images.length > 0);
+    const imagesForVision = hasImages
+      ? await fetchImagesAsBase64(dto.images!)
+      : [];
     const aiResult = await this.callWithFallback(
       systemPrompt,
       userMessage,
-      dto.images || [],
+      imagesForVision,
       chatHistory,
       hasImages,
     );
@@ -272,7 +276,7 @@ export class ChatService extends BaseAiService {
           userMessage,
           images,
           chatHistory,
-          { model: 'gpt-4o', temperature: 0.7, maxTokens: 1000 },
+          { model: 'gpt-4o', temperature: 0.7, maxTokens: 4000 },
         );
         return {
           content: response.content,
@@ -329,14 +333,25 @@ export class ChatService extends BaseAiService {
 
     return this.deepseekProvider.chatWithRetry(messages, {
       temperature: 0.7,
-      maxTokens: 1000,
+      maxTokens: 4000,
     });
   }
 
   /**
-   * Build system prompt with pet context
+   * Build system prompt with pet context and optional PawScan context
    */
-  private buildSystemPrompt(petContext: string): string {
+  private buildSystemPrompt(petContext: string, pawscanContext?: string): string {
+    // Always include current date so AI knows what day it is
+    const today = new Date();
+    const dateStr = today.toLocaleDateString('en-US', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+    const basePrompt = `${AI_PROMPTS.CHAT_SYSTEM}\n\nCURRENT DATE: ${dateStr}`;
+    let fullPrompt = basePrompt;
+
     if (petContext) {
       // Parse and format pet context nicely
       try {
@@ -356,11 +371,29 @@ export class ChatService extends BaseAiService {
           contextStr += `\n- Breed: ${pet.breed}`;
         }
         if (pet.weight) {
-          contextStr += `\n- Weight: ${pet.weight}kg`;
+          // Parse weight unit from notes field (stored as JSON by PawMD app)
+          let weightUnit = 'lbs'; // Default to lbs (app default)
+          if (pet.notes) {
+            try {
+              const notesData = JSON.parse(pet.notes);
+              if (notesData.weightUnit) {
+                weightUnit = notesData.weightUnit === 'kg' ? 'kg' : 'lbs';
+              }
+            } catch {
+              // Notes not valid JSON, use default
+            }
+          }
+          contextStr += `\n- Weight: ${pet.weight} ${weightUnit}`;
         }
         if (pet.birth_date) {
           const age = this.calculateAge(pet.birth_date);
           contextStr += `\n- Age: ${age}`;
+        }
+        if (pet.gender || pet.sex) {
+          contextStr += `\n- Gender: ${pet.gender || pet.sex}`;
+        }
+        if (pet.reproductive_status) {
+          contextStr += `\n- Reproductive Status: ${pet.reproductive_status}`;
         }
         if (pet.allergies) {
           contextStr += `\n- Allergies: ${pet.allergies}`;
@@ -389,17 +422,67 @@ export class ChatService extends BaseAiService {
           });
         }
 
-        return `${AI_PROMPTS.CHAT_SYSTEM}${contextStr}`;
+        fullPrompt = `${basePrompt}${contextStr}`;
       } catch {
         // If parsing fails, use truncated raw context
         const truncated =
           petContext.length > 500
             ? petContext.substring(0, 500) + '...'
             : petContext;
-        return `${AI_PROMPTS.CHAT_SYSTEM}\n\nPet info: ${truncated}`;
+        fullPrompt = `${basePrompt}\n\nPet info: ${truncated}`;
       }
     }
-    return AI_PROMPTS.CHAT_SYSTEM;
+
+    // Add PawScan context if provided
+    if (pawscanContext) {
+      try {
+        const scan = JSON.parse(pawscanContext);
+        let scanStr = `\n\nRECENT PAWSCAN RESULTS (User is asking about this scan):`;
+        
+        if (scan.diagnosis) {
+          scanStr += `\n- Diagnosis: ${scan.diagnosis}`;
+        }
+        if (scan.prognosis) {
+          scanStr += `\n- Prognosis: ${scan.prognosis}`;
+        }
+        if (scan.severity) {
+          const scoreStr = scan.severityScore ? ` (${scan.severityScore}/5)` : '';
+          scanStr += `\n- Severity: ${scan.severity}${scoreStr}`;
+        }
+        if (scan.vetAction) {
+          const actionLabels: Record<string, string> = {
+            'urgent_care': 'Urgent care needed',
+            'see_vet': 'See a vet',
+            'monitor': 'Monitor at home',
+          };
+          scanStr += `\n- Recommended Action: ${actionLabels[scan.vetAction] || scan.vetAction}`;
+        }
+        if (scan.triage) {
+          scanStr += `\n- Initial Assessment: ${scan.triage}`;
+        }
+        if (scan.recommendations && Array.isArray(scan.recommendations) && scan.recommendations.length > 0) {
+          scanStr += `\n- Recommendations:`;
+          scan.recommendations.slice(0, 5).forEach((rec: string) => {
+            scanStr += `\n  • ${rec}`;
+          });
+        }
+        if (scan.riskFlags && Array.isArray(scan.riskFlags) && scan.riskFlags.length > 0) {
+          scanStr += `\n- Risk Flags:`;
+          scan.riskFlags.forEach((flag: string) => {
+            scanStr += `\n  ⚠️ ${flag}`;
+          });
+        }
+        
+        scanStr += `\n\nIMPORTANT: The user has just completed a PawScan and wants to discuss these results. Acknowledge that you can see their scan results and offer to help explain or answer questions about the diagnosis, prognosis, or recommendations. Be supportive and informative.`;
+        
+        fullPrompt += scanStr;
+      } catch {
+        // If parsing fails, just mention we have scan context
+        fullPrompt += `\n\nNote: User has recent PawScan results they want to discuss.`;
+      }
+    }
+
+    return fullPrompt;
   }
 
   /**
