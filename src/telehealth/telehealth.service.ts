@@ -631,7 +631,7 @@ export class TelehealthService {
     const { data, error } = await this.supabaseService
       .getClient()
       .from('telehealth_sessions')
-      .select('*')
+      .select('id, vet_id')
       .eq('appointment_id', appointmentId)
       .maybeSingle();
 
@@ -640,5 +640,89 @@ export class TelehealthService {
     }
 
     return data;
+  }
+
+  /**
+   * Create or update telehealth session for an appointment
+   * Used when appointments are scheduled to ensure messaging session exists
+   */
+  async createOrUpdateSessionForAppointment(
+    appointmentId: string,
+    sessionData: {
+      client_id: string;
+      vet_id: string;
+      pet_id: string;
+      scheduled_time: string;
+      consultation_type?: 'chat' | 'call' | 'video';
+      status?: 'scheduled' | 'waiting';
+    }
+  ): Promise<any> {
+    // Check if session already exists
+    const { data: existingSession, error: findError } = await this.supabaseService
+      .getClient()
+      .from('telehealth_sessions')
+      .select('id, vet_id')
+      .eq('appointment_id', appointmentId)
+      .maybeSingle();
+
+    if (findError && findError.code !== 'PGRST116') {
+      // PGRST116 is "not found" which is expected, other errors are real errors
+      throw new InternalServerErrorException(`Failed to check existing session: ${findError.message}`);
+    }
+
+    if (existingSession) {
+      // Update vet_id if it changed
+      if (existingSession.vet_id !== sessionData.vet_id) {
+        const { data: updatedSession, error: updateError } = await this.supabaseService
+          .getClient()
+          .from('telehealth_sessions')
+          .update({
+            vet_id: sessionData.vet_id,
+            status: sessionData.status || 'scheduled',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existingSession.id)
+          .select()
+          .single();
+
+        if (updateError) {
+          throw new InternalServerErrorException(`Failed to update session: ${updateError.message}`);
+        }
+
+        return updatedSession;
+      }
+
+      // Return existing session if no update needed
+      const { data: session } = await this.supabaseService
+        .getClient()
+        .from('telehealth_sessions')
+        .select('*')
+        .eq('id', existingSession.id)
+        .single();
+
+      return session;
+    }
+
+    // Create new session
+    const { data: newSession, error: createError } = await this.supabaseService
+      .getClient()
+      .from('telehealth_sessions')
+      .insert({
+        appointment_id: appointmentId,
+        client_id: sessionData.client_id,
+        vet_id: sessionData.vet_id,
+        pet_id: sessionData.pet_id,
+        scheduled_time: sessionData.scheduled_time,
+        status: sessionData.status || 'scheduled',
+        consultation_type: sessionData.consultation_type || 'chat',
+      })
+      .select()
+      .single();
+
+    if (createError) {
+      throw new InternalServerErrorException(`Failed to create session: ${createError.message}`);
+    }
+
+    return newSession;
   }
 }

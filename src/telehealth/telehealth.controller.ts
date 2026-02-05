@@ -91,4 +91,25 @@ export class TelehealthController {
   async findByAppointment(@Param('appointmentId') appointmentId: string) {
     return this.telehealthService.findByAppointment(appointmentId);
   }
+
+  /**
+   * Create or update telehealth session for an appointment
+   * POST /api/telehealth/appointment/:appointmentId/session
+   */
+  @Post('appointment/:appointmentId/session')
+  @HttpCode(HttpStatus.CREATED)
+  async createOrUpdateSessionForAppointment(
+    @Param('appointmentId') appointmentId: string,
+    @Body() sessionData: {
+      client_id: string;
+      vet_id: string;
+      pet_id: string;
+      scheduled_time: string;
+      consultation_type?: 'chat' | 'call' | 'video';
+      status?: 'scheduled' | 'waiting';
+    },
+    @Request() req: { user: UserContext }
+  ) {
+    return this.telehealthService.createOrUpdateSessionForAppointment(appointmentId, sessionData);
+  }
 }
