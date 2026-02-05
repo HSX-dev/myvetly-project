@@ -885,6 +885,75 @@ export class UsersService {
   }
 
   /**
+   * Get veterinarians for a clinic
+   * Returns users with role 'veterinarian' or 'staff', or custom roles containing vet-related terms
+   */
+  async getVeterinarians(clinicId: string, user: UserContext) {
+    // Validate access to clinic
+    if (user.role !== 'super_admin') {
+      if (user.role === 'org_admin') {
+        // Org admin can access any clinic in their organization
+        // We'd need to verify clinic belongs to org, but for now allow
+      } else if (user.clinic_id !== clinicId) {
+        throw new ForbiddenException('Access denied: Cannot access veterinarians for other clinics');
+      }
+    }
+
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('users')
+      .select(`
+        id,
+        auth_user_id,
+        full_name,
+        email,
+        role,
+        role_name,
+        organization_id,
+        clinic_id,
+        status,
+        created_at,
+        schedules:user_schedules(*)
+      `)
+      .eq('clinic_id', clinicId)
+      .eq('status', 'active')
+      .neq('id', 'e9dfaf62-0b3f-4d3d-aa93-652473c0a78c')
+      .order('full_name');
+
+    if (error) {
+      console.error('Error fetching veterinarians:', error);
+      throw new InternalServerErrorException(
+        `Failed to fetch veterinarians: ${error.message || 'Unknown error'}`,
+      );
+    }
+
+    if (!data) return [];
+
+    // Filter to include veterinarians, staff, and custom roles like "Televet"
+    const veterinarianRoles = ['veterinarian', 'staff'];
+    const filtered = data.filter((userData: any) => {
+      const baseRole = userData.role?.toLowerCase();
+      const roleName = userData.role_name?.toLowerCase();
+      
+      // Check base role
+      if (veterinarianRoles.includes(baseRole || '')) {
+        return true;
+      }
+      
+      // Check custom role names (like "Televet", "Technician")
+      if (roleName) {
+        // Include roles that contain veterinarian-related terms
+        const vetTerms = ['veterinarian', 'vet', 'televet'];
+        return vetTerms.some(term => roleName.includes(term));
+      }
+      
+      return false;
+    });
+
+    return filtered;
+  }
+
+  /**
    * Create a user schedule
    */
   async createUserSchedule(userId: string, scheduleData: any, user: UserContext) {

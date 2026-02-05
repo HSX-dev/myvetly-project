@@ -49,6 +49,11 @@ export class UsersController {
     return this.usersService.getUserSchedules(clinicId, user);
   }
 
+  @Get('veterinarians/clinic/:clinicId')
+  getVeterinarians(@Param('clinicId') clinicId: string, @GetUser() user: any) {
+    return this.usersService.getVeterinarians(clinicId, user);
+  }
+
   @Post('schedules/:userId')
   @HttpCode(HttpStatus.CREATED)
   createUserSchedule(
