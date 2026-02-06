@@ -31,6 +31,7 @@ import { SettingsModule } from './settings/settings.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { SoapModule } from './soap/soap.module';
 import { WhiteboardModule } from './whiteboard/whiteboard.module';
+import { OnboardingModule } from './onboarding/onboarding.module';
 import configuration from './config/configuration';
 
 @Module({
@@ -76,6 +77,7 @@ import configuration from './config/configuration';
     DashboardModule,
     SoapModule,
     WhiteboardModule,
+    OnboardingModule,
   ],
   controllers: [AppController],
   providers: [

@@ -1,10 +1,25 @@
 import { Expose } from 'class-transformer';
-import { IsString, IsOptional, IsEmail } from 'class-validator';
+import { IsString, IsOptional, IsEmail, IsUUID } from 'class-validator';
 
 export class CreateOrganizationDto {
   @Expose()
   @IsString()
   name: string;
+
+  @Expose()
+  @IsUUID()
+  @IsOptional()
+  plan_id?: string;
+
+  @Expose()
+  @IsString()
+  @IsOptional()
+  contact_name?: string;
+
+  @Expose()
+  @IsEmail()
+  @IsOptional()
+  contact_email?: string;
 
   @Expose()
   @IsString()
@@ -20,5 +35,10 @@ export class CreateOrganizationDto {
   @IsEmail()
   @IsOptional()
   email?: string;
+
+  @Expose()
+  @IsString()
+  @IsOptional()
+  status?: string;
 }
 

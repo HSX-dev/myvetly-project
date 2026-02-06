@@ -10,6 +10,38 @@ import type { UserContext } from '../auth/auth.guard';
 export class RolesController {
   constructor(private readonly rolesService: RolesService) {}
 
+  // Admin Roles endpoints
+  @Get('admin-roles')
+  findAllAdminRoles() {
+    return this.rolesService.findAllAdminRoles();
+  }
+
+  @Get('admin-roles/:id')
+  findOneAdminRole(@Param('id') id: string) {
+    return this.rolesService.findOneAdminRole(id);
+  }
+
+  @Post('admin-roles')
+  @HttpCode(HttpStatus.CREATED)
+  createAdminRole(@Body(CleanDtoPipe) createDto: any) {
+    return this.rolesService.createAdminRole(createDto);
+  }
+
+  @Patch('admin-roles/:id')
+  updateAdminRole(
+    @Param('id') id: string,
+    @Body(CleanDtoPipe) updateDto: any
+  ) {
+    return this.rolesService.updateAdminRole(id, updateDto);
+  }
+
+  @Delete('admin-roles/:id')
+  @HttpCode(HttpStatus.OK)
+  deleteAdminRole(@Param('id') id: string) {
+    return this.rolesService.deleteAdminRole(id);
+  }
+
+  // System Roles endpoints
   @Get()
   findAll() {
     return this.rolesService.findAll();

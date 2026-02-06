@@ -8,6 +8,67 @@ import { UserContext } from '../auth/auth.guard';
 export class RolesService {
   constructor(private supabaseService: SupabaseService) {}
 
+  // Admin Roles (admin_roles table) methods
+  async findAllAdminRoles() {
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('admin_roles')
+      .select('*')
+      .order('name', { ascending: true });
+
+    if (error) throw error;
+    return data;
+  }
+
+  async findOneAdminRole(id: string) {
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('admin_roles')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) throw new NotFoundException(`Admin role with id ${id} not found`);
+    return data;
+  }
+
+  async createAdminRole(roleData: any) {
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('admin_roles')
+      .insert(roleData)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  }
+
+  async updateAdminRole(id: string, roleData: any) {
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('admin_roles')
+      .update(roleData)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw new NotFoundException(`Admin role with id ${id} not found`);
+    return data;
+  }
+
+  async deleteAdminRole(id: string) {
+    const { error } = await this.supabaseService
+      .getClient()
+      .from('admin_roles')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+    return { success: true };
+  }
+
+  // System Roles (roles table) methods
   async findAll() {
     const { data, error } = await this.supabaseService
       .getClient()

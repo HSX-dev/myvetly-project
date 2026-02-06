@@ -531,6 +531,65 @@ export class UsersService {
   }
 
   /**
+   * Update user password via Supabase Auth Admin API
+   * This replaces the Edge Function approach
+   */
+  async updatePassword(id: string, newPassword: string, user: UserContext) {
+    console.log('🔐 updatePassword called:', { userId: id, currentUser: user.id, role: user.role });
+
+    // First, get the target user to validate access and get auth_user_id
+    let targetUser;
+    try {
+      targetUser = await this.findOne(id, user);
+      console.log('✅ Target user found:', { id: targetUser.id, auth_user_id: targetUser.auth_user_id });
+    } catch (error) {
+      console.error('❌ Failed to find target user:', error);
+      throw error; // Re-throw to preserve the original error (RLS/not found)
+    }
+
+    if (!targetUser.auth_user_id) {
+      console.error('❌ User record exists but auth_user_id is missing:', { userId: id });
+      throw new NotFoundException('User auth_user_id not found - user may not have an auth account');
+    }
+
+    // Validate password length
+    if (newPassword.length < 8) {
+      throw new InternalServerErrorException('Password must be at least 8 characters long');
+    }
+
+    // Update password via Supabase Auth Admin API
+    console.log('🔄 Updating password via Supabase Auth Admin API...');
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .auth.admin.updateUserById(targetUser.auth_user_id, {
+        password: newPassword,
+      });
+
+    if (error) {
+      console.error('❌ Error updating user password via Supabase Auth:', error);
+      throw new InternalServerErrorException(
+        `Failed to update password: ${error.message || 'Unknown error'}`,
+      );
+    }
+
+    console.log('✅ Password updated in Supabase Auth, updating has_set_password flag...');
+
+    // Update has_set_password flag in users table
+    await this.supabaseService
+      .getClient()
+      .from('users')
+      .update({ has_set_password: true })
+      .eq('id', id);
+
+    console.log('✅ Password update completed successfully');
+
+    return {
+      success: true,
+      message: 'Password updated successfully',
+    };
+  }
+
+  /**
    * Remove a user (soft delete - sets status to 'deleted')
    * Note: Auth user deletion should be handled by frontend Edge Functions.
    */
