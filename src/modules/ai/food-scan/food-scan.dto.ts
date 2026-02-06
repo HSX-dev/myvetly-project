@@ -30,6 +30,18 @@ export class FoodScanResponseDto {
     scan_type: string;
     safety_rating: 'safe' | 'caution' | 'toxic' | 'unknown';
     toxicity_score: number;
+    pawmd_score: {
+      score: number;
+      label: 'excellent' | 'good' | 'acceptable' | 'poor' | 'avoid';
+      summary: string;
+      factors: {
+        ingredient_quality: number;
+        nutritional_balance: number;
+        beneficial_components: number;
+        harmful_components: number;
+        pet_specific: number;
+      };
+    };
     ingredients: any[];
     toxic_ingredients: any[];
     nutritional_value: any;
