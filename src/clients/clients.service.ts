@@ -207,6 +207,49 @@ export class ClientsService {
     };
   }
 
+  async findByUserId(userId: string) {
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('clients')
+      .select(`
+        *,
+        users!clients_user_id_fkey ( first_name, last_name, full_name, email )
+      `)
+      .eq('user_id', userId)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        throw new NotFoundException(`Client with user_id ${userId} not found`);
+      }
+      throw error;
+    }
+
+    if (!data) {
+      throw new NotFoundException(`Client with user_id ${userId} not found`);
+    }
+
+    const { users, ...clientData } = data;
+    const user = Array.isArray(users) ? users[0] : users;
+
+    // Map database field names to frontend Client type field names
+    return {
+      ...clientData,
+      first_name: user?.first_name ?? '',
+      last_name: user?.last_name ?? '',
+      full_name: user?.full_name ?? '',
+      email: user?.email ?? '',
+      clinic_name: 'N/A',
+      // Map database alert field to alert_notes
+      alert_notes: clientData.alert,
+      // Map database communication fields to Client type fields
+      comm_email_ok: clientData.comm_appointment_notification ?? true,
+      comm_phone_ok: clientData.comm_mass_communication ?? true,
+      comm_sms_ok: clientData.comm_client_reminders ?? true,
+      comm_mail_ok: false, // Not in database, default to false
+    };
+  }
+
   async create(createClientDto: CreateClientDto, user: UserContext) {
     // Separate fields that go to different tables
     const { first_name, last_name, email, ...clientFields } = createClientDto;

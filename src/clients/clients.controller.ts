@@ -34,6 +34,11 @@ export class ClientsController {
     return this.clientsService.findAllIncludingDeleted(user);
   }
 
+  @Get('user/:userId')
+  findByUserId(@Param('userId') userId: string) {
+    return this.clientsService.findByUserId(userId);
+  }
+
   // Client Notes Routes - Must be before :id route to avoid conflicts
   @Get(':id/notes')
   getClientNotes(@Param('id') id: string) {

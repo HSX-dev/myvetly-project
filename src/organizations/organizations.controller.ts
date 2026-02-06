@@ -28,6 +28,11 @@ export class OrganizationsController {
     return this.organizationsService.findAll();
   }
 
+  @Get('plans')
+  getPlans() {
+    return this.organizationsService.getPlans();
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.organizationsService.findOne(id);
@@ -41,6 +46,11 @@ export class OrganizationsController {
   @Get(':id/users')
   getUsers(@Param('id') id: string) {
     return this.organizationsService.getUsersByOrganization(id);
+  }
+
+  @Get(':id/subscriptions')
+  getSubscriptions(@Param('id') id: string) {
+    return this.organizationsService.getSubscriptionsByOrganization(id);
   }
 
   @Patch(':id')

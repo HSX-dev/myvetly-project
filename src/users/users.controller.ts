@@ -10,7 +10,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
-import { CreateUserDto, UpdateUserDto, CreateUserScheduleDto, UpdateUserScheduleDto } from './dto';
+import { CreateUserDto, UpdateUserDto, UpdatePasswordDto, CreateUserScheduleDto, UpdateUserScheduleDto } from './dto';
 import { GetUser } from '../utils/decorators/get-user.decorator';
 import { CleanDtoPipe } from '../utils/pipes/clean-dto.pipe';
 
@@ -54,6 +54,11 @@ export class UsersController {
     return this.usersService.getVeterinarians(clinicId, user);
   }
 
+  @Get('email/:email')
+  findByEmail(@Param('email') email: string) {
+    return this.usersService.findByEmail(email);
+  }
+
   @Post('schedules/:userId')
   @HttpCode(HttpStatus.CREATED)
   createUserSchedule(
@@ -85,6 +90,16 @@ export class UsersController {
     @GetUser() user: any,
   ) {
     return this.usersService.update(id, updateUserDto, user);
+  }
+
+  @Patch(':id/password')
+  @HttpCode(HttpStatus.OK)
+  updatePassword(
+    @Param('id') id: string,
+    @Body(CleanDtoPipe) updatePasswordDto: UpdatePasswordDto,
+    @GetUser() user: any,
+  ) {
+    return this.usersService.updatePassword(id, updatePasswordDto.new_password, user);
   }
 
   @Post('bulk/delete')
