@@ -29,6 +29,35 @@ export class ChatService extends BaseAiService {
       RATE_LIMITS.CHAT.windowSeconds,
     );
 
+    // Get client_id for session tracking
+    const clientResult = await this.getSupabase()
+      .from('clients')
+      .select('id')
+      .eq('user_id', userId)
+      .maybeSingle();
+    
+    const clientId = clientResult.data?.id;
+
+    // Ensure session exists in database
+    if (clientId) {
+      const sessionExists = await this.getSupabase()
+        .from('pawla_chat_sessions')
+        .select('id')
+        .eq('id', sessionId)
+        .maybeSingle();
+
+      if (!sessionExists.data) {
+        await this.getSupabase()
+          .from('pawla_chat_sessions')
+          .insert({
+            id: sessionId,
+            user_id: userId,
+            client_id: clientId,
+            pet_id: dto.pet_id || null,
+          });
+      }
+    }
+
     // Get pet context if provided
     let petContext = '';
     if (dto.pet_id) {
@@ -47,24 +76,71 @@ export class ChatService extends BaseAiService {
       }
     }
 
+    // Save user message to database
+    const userMessageId = uuidv4();
+    if (clientId) {
+      await this.getSupabase()
+        .from('pawla_chat_messages')
+        .insert({
+          id: userMessageId,
+          session_id: sessionId,
+          role: 'user',
+          content: dto.message,
+          media_url: dto.images?.[0] || null,
+          metadata: {
+            image_count: dto.images?.length || 0,
+            pet_id: dto.pet_id,
+          },
+        });
+    }
+
     // Build system prompt
     const systemPrompt = this.buildSystemPrompt(petContext);
 
-    // Handle image analysis if provided
-    let message = dto.message;
+    // Handle image analysis if provided - use vision API for multiple images
+    let response: { content: string; tokensUsed: number };
     if (dto.images && dto.images.length > 0) {
-      const imageAnalysis = await this.openaiProvider.analyzeImage(
-        dto.images[0],
-        'Analyze this pet image. Focus on health-related observations.',
+      // Create a better default prompt for pet image analysis
+      const imagePrompt = dto.message || 
+        (dto.images.length > 1 
+          ? 'Please analyze these photos of my pet. What do you observe about their appearance, behavior, and overall health?'
+          : 'Please analyze this photo of my pet. What do you observe about their appearance, behavior, and overall health?');
+      
+      response = await this.openaiProvider.analyzeImageUrls(
+        dto.images,
+        systemPrompt,
+        imagePrompt,
+        {
+          temperature: 0.7,
+          maxTokens: 1500,
+        }
       );
-      message = `[Image Analysis: ${imageAnalysis.content}]\n\nUser question: ${dto.message}`;
+    } else {
+      // Text-only chat
+      response = await this.callOpenAI(systemPrompt, dto.message, {
+        temperature: 0.7,
+        maxTokens: 500,
+      });
     }
 
-    // Call OpenAI
-    const response = await this.callOpenAI(systemPrompt, message, {
-      temperature: 0.7,
-      maxTokens: 500,
-    });
+    // Save assistant response to database
+    const assistantMessageId = uuidv4();
+    if (clientId) {
+      await this.getSupabase()
+        .from('pawla_chat_messages')
+        .insert({
+          id: assistantMessageId,
+          session_id: sessionId,
+          role: 'assistant',
+          content: response.content,
+          media_url: null,
+          metadata: {
+            tokens_used: response.tokensUsed,
+            model: 'gpt-4o-mini',
+            pet_context_used: !!dto.pet_id,
+          },
+        });
+    }
 
     this.logTiming('Chat', startTime, { userId, hasImage: !!dto.images?.length });
 

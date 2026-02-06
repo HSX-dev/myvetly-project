@@ -19,6 +19,13 @@ export class PawscanService extends BaseAiService {
   }
 
   async analyze(dto: PawScanRequestDto, userId: string): Promise<PawScanResponseDto | PawScanTreatmentResponseDto> {
+    console.log('🩺 [VETLY-API] PawScan called!', {
+      userId,
+      petId: dto.pet_id,
+      mode: dto.mode || 'analyze',
+      hasMedia: dto.media && dto.media.length > 0,
+    });
+
     await this.checkRateLimit(
       `rate:pawscan:${userId}`,
       RATE_LIMITS.PAWSCAN.maxRequests,
