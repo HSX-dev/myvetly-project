@@ -74,16 +74,16 @@ export abstract class BaseAiService {
   protected async callOpenAI(
     systemPrompt: string,
     userPrompt: string,
-    options: { temperature?: number; maxTokens?: number } = {},
+    options: { temperature?: number; maxTokens?: number; model?: 'gpt-4o-mini' | 'gpt-4o' } = {},
   ) {
-    const { temperature = 0.7, maxTokens = 1000 } = options;
+    const { temperature = 0.7, maxTokens = 1000, model = 'gpt-4o-mini' } = options;
 
     return this.openaiProvider.chat(
       [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      { model: 'gpt-4o-mini', temperature, maxTokens },
+      { model, temperature, maxTokens },
     );
   }
 
@@ -107,17 +107,46 @@ export abstract class BaseAiService {
   }
 
   /**
-   * Parse JSON response with error handling
+   * Parse JSON response with error handling.
+   * Handles AI output with leading text and/or markdown code blocks (```json ... ```).
    */
   protected parseJsonResponse<T = any>(content: string): T {
     try {
-      // Clean markdown code blocks if present
       let cleaned = content.trim();
-      if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
-      if (cleaned.startsWith('```')) cleaned = cleaned.slice(3);
-      if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
-      
-      return JSON.parse(cleaned.trim());
+
+      // Extract from ```json ... ``` or ``` ... ``` (handles leading text like "I'm unable to...")
+      const codeBlockMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (codeBlockMatch) {
+        cleaned = codeBlockMatch[1].trim();
+      } else {
+        // No code block: strip optional leading ```json/```
+        if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
+        else if (cleaned.startsWith('```')) cleaned = cleaned.slice(3);
+        if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
+        cleaned = cleaned.trim();
+      }
+
+      // If still no JSON start, find first { and take to matching }
+      if (!cleaned.startsWith('{')) {
+        const start = cleaned.indexOf('{');
+        if (start !== -1) {
+          let depth = 0;
+          let end = -1;
+          for (let i = start; i < cleaned.length; i++) {
+            if (cleaned[i] === '{') depth++;
+            else if (cleaned[i] === '}') {
+              depth--;
+              if (depth === 0) {
+                end = i;
+                break;
+              }
+            }
+          }
+          if (end !== -1) cleaned = cleaned.slice(start, end + 1);
+        }
+      }
+
+      return JSON.parse(cleaned);
     } catch (error) {
       this.logger.error('Failed to parse AI response', { content });
       throw new BadRequestException('Failed to parse AI response');
@@ -130,13 +159,31 @@ export abstract class BaseAiService {
   protected calculateAge(birthDate: string): string {
     const birth = new Date(birthDate);
     const now = new Date();
-    const years = now.getFullYear() - birth.getFullYear();
-    const months = now.getMonth() - birth.getMonth();
+    
+    let years = now.getFullYear() - birth.getFullYear();
+    let months = now.getMonth() - birth.getMonth();
+    
+    // Adjust if birthday hasn't occurred yet this year
+    if (months < 0 || (months === 0 && now.getDate() < birth.getDate())) {
+      years--;
+      months += 12;
+    }
+    
+    // Adjust months if day hasn't passed
+    if (now.getDate() < birth.getDate()) {
+      months--;
+      if (months < 0) months += 12;
+    }
     
     if (years < 1) {
-      return `${Math.max(0, years * 12 + months)} months`;
+      return `${Math.max(0, months)} month${months !== 1 ? 's' : ''}`;
     }
-    return `${years} year${years > 1 ? 's' : ''}`;
+    
+    if (months > 0) {
+      return `${years} year${years !== 1 ? 's' : ''} ${months} month${months !== 1 ? 's' : ''}`;
+    }
+    
+    return `${years} year${years !== 1 ? 's' : ''}`;
   }
 
   /**
