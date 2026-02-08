@@ -11,7 +11,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { AppointmentsService } from './appointments.service';
-import { CreateAppointmentDto, UpdateAppointmentDto } from './dto';
+import { CreateAppointmentDto, UpdateAppointmentDto, SendConfirmationEmailDto } from './dto';
 import { CleanDtoPipe } from '../utils/pipes/clean-dto.pipe';
 import { GetUser } from '../utils/decorators/get-user.decorator';
 
@@ -81,6 +81,12 @@ export class AppointmentsController {
   @Delete(':id')
   remove(@Param('id') id: string, @GetUser() user: any) {
     return this.appointmentsService.remove(id, user);
+  }
+
+  @Post('send-confirmation-email')
+  @HttpCode(HttpStatus.OK)
+  sendConfirmationEmail(@Body(CleanDtoPipe) sendConfirmationDto: SendConfirmationEmailDto) {
+    return this.appointmentsService.sendConfirmationEmail(sendConfirmationDto);
   }
 }
 

@@ -8,6 +8,7 @@ import {
   Delete,
   HttpCode,
   HttpStatus,
+  ForbiddenException,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto, UpdateUserDto, UpdatePasswordDto, CreateUserScheduleDto, UpdateUserScheduleDto } from './dto';
@@ -57,6 +58,15 @@ export class UsersController {
   @Get('email/:email')
   findByEmail(@Param('email') email: string) {
     return this.usersService.findByEmail(email);
+  }
+
+  @Get('auth-user/:authUserId')
+  findByAuthUserId(@Param('authUserId') authUserId: string, @GetUser() user: any) {
+    // Verify that the requested authUserId matches the authenticated user
+    if (user.auth_user_id !== authUserId) {
+      throw new ForbiddenException('Access denied: Cannot fetch other users by auth_user_id');
+    }
+    return this.usersService.findByAuthUserId(authUserId);
   }
 
   @Post('schedules/:userId')
