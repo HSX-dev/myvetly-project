@@ -1,11 +1,15 @@
 import { Injectable, NotFoundException, BadRequestException, InternalServerErrorException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../supabase/supabase.service';
-import { CreateAppointmentDto, UpdateAppointmentDto } from './dto';
+import { CreateAppointmentDto, UpdateAppointmentDto, SendConfirmationEmailDto } from './dto';
 import { UserContext } from '../auth/auth.guard';
 
 @Injectable()
 export class AppointmentsService {
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(
+    private supabaseService: SupabaseService,
+    private configService: ConfigService,
+  ) {}
 
   /**
    * Get all appointments (admin only)
@@ -668,5 +672,240 @@ export class AppointmentsService {
       type.includes('online') ||
       type.includes('video')
     );
+  }
+
+  /**
+   * Send appointment confirmation email
+   */
+  async sendConfirmationEmail(sendConfirmationDto: SendConfirmationEmailDto): Promise<{
+    success: boolean;
+    message: string;
+    booking_reference?: string;
+    error?: string;
+  }> {
+    const { appointment_id } = sendConfirmationDto;
+
+    try {
+      // Fetch appointment with all necessary relations
+      const { data: appointment, error: appointmentError } = await this.supabaseService
+        .getClient()
+        .from('appointments')
+        .select(`
+          *,
+          pets(
+            id,
+            name,
+            species,
+            breed,
+            clients(
+              id,
+              phone,
+              users!user_id(
+                id,
+                full_name,
+                email
+              )
+            )
+          ),
+          users!vet_id(
+            id,
+            full_name
+          ),
+          clinics!tenant_id(
+            id,
+            name,
+            phone,
+            address
+          )
+        `)
+        .eq('id', appointment_id)
+        .single();
+
+      if (appointmentError || !appointment) {
+        throw new NotFoundException(`Appointment with id ${appointment_id} not found`);
+      }
+
+      // Validate appointment status
+      if (appointment.status !== 'scheduled') {
+        throw new BadRequestException(
+          `Cannot send confirmation email for appointment with status "${appointment.status}". Appointment must be "scheduled".`
+        );
+      }
+
+      // Extract client email - handle array or single object
+      const pets = Array.isArray(appointment.pets) ? appointment.pets[0] : appointment.pets;
+      const clients = Array.isArray(pets?.clients) ? pets.clients[0] : pets?.clients;
+      const users = Array.isArray(clients?.users) ? clients.users[0] : clients?.users;
+      const clientUser = users;
+      
+      if (!clientUser || !clientUser.email) {
+        throw new BadRequestException('Client email not found for this appointment');
+      }
+
+      // Get SendGrid API key
+      const sendGridApiKey = this.configService.get<string>('SENDGRID_API_KEY');
+      if (!sendGridApiKey) {
+        throw new InternalServerErrorException('SendGrid API key is not configured');
+      }
+
+      // Format appointment time
+      const appointmentDate = new Date(appointment.appointment_time);
+      const formattedDate = appointmentDate.toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+      const formattedTime = appointmentDate.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      });
+
+      // Generate booking reference (use appointment ID first 8 chars)
+      const bookingReference = appointment_id.substring(0, 8).toUpperCase();
+
+      // Prepare email content
+      const petName = pets?.name || 'Your Pet';
+      const petSpecies = pets?.species || 'N/A';
+      const vetName = Array.isArray(appointment.users) ? appointment.users[0]?.full_name : appointment.users?.full_name;
+      const clinic = Array.isArray(appointment.clinics) ? appointment.clinics[0] : appointment.clinics;
+      
+      const emailSubject = `Appointment Confirmation - ${petName}`;
+      const emailHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background-color: #008080; color: white; padding: 20px; text-align: center; }
+            .content { padding: 20px; background-color: #f9f9f9; }
+            .appointment-details { background-color: white; padding: 15px; margin: 15px 0; border-left: 4px solid #008080; }
+            .detail-row { margin: 10px 0; }
+            .label { font-weight: bold; color: #555; }
+            .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>Appointment Confirmed</h1>
+            </div>
+            <div class="content">
+              <p>Dear ${clientUser.full_name || 'Valued Client'},</p>
+              <p>Your appointment has been confirmed. Please find the details below:</p>
+              
+              <div class="appointment-details">
+                <div class="detail-row">
+                  <span class="label">Pet:</span> ${petName} (${petSpecies})
+                </div>
+                <div class="detail-row">
+                  <span class="label">Date:</span> ${formattedDate}
+                </div>
+                <div class="detail-row">
+                  <span class="label">Time:</span> ${formattedTime}
+                </div>
+                <div class="detail-row">
+                  <span class="label">Veterinarian:</span> ${vetName || 'TBD'}
+                </div>
+                <div class="detail-row">
+                  <span class="label">Clinic:</span> ${clinic?.name || 'N/A'}
+                </div>
+                ${clinic?.address ? `
+                <div class="detail-row">
+                  <span class="label">Address:</span> ${clinic.address}
+                </div>
+                ` : ''}
+                ${clinic?.phone ? `
+                <div class="detail-row">
+                  <span class="label">Phone:</span> ${clinic.phone}
+                </div>
+                ` : ''}
+                <div class="detail-row">
+                  <span class="label">Booking Reference:</span> ${bookingReference}
+                </div>
+              </div>
+
+              <p>If you need to reschedule or cancel, please contact the clinic at least 24 hours in advance.</p>
+              <p>We look forward to seeing you!</p>
+            </div>
+            <div class="footer">
+              <p>This is an automated confirmation email. Please do not reply to this message.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+
+      // Send email via SendGrid
+      const sendGridResponse = await fetch('https://api.sendgrid.com/v3/mail/send', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${sendGridApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          personalizations: [
+            {
+              to: [{ email: clientUser.email, name: clientUser.full_name || 'Client' }],
+              subject: emailSubject,
+            },
+          ],
+          from: {
+            email: this.configService.get<string>('SENDGRID_FROM_EMAIL') || 'noreply@vetly.com',
+            name: this.configService.get<string>('SENDGRID_FROM_NAME') || 'Vetly',
+          },
+          content: [
+            {
+              type: 'text/html',
+              value: emailHtml,
+            },
+          ],
+        }),
+      });
+
+      if (!sendGridResponse.ok) {
+        const errorText = await sendGridResponse.text();
+        console.error('SendGrid API error:', errorText);
+        throw new InternalServerErrorException(`Failed to send email: ${sendGridResponse.statusText}`);
+      }
+
+      // Log notification in database
+      const { error: notificationError } = await this.supabaseService
+        .getClient()
+        .from('appointment_notifications')
+        .insert({
+          appointment_id: appointment_id,
+          notification_type: 'confirmation_email',
+          status: 'sent',
+          recipient_email: clientUser.email,
+          sent_at: new Date().toISOString(),
+        });
+
+      if (notificationError) {
+        console.error('Error logging notification:', notificationError);
+        // Don't throw - email was sent successfully
+      }
+
+      return {
+        success: true,
+        message: 'Confirmation email sent successfully',
+        booking_reference: bookingReference,
+      };
+    } catch (error) {
+      console.error('Error sending confirmation email:', error);
+      
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+
+      return {
+        success: false,
+        message: 'Failed to send confirmation email',
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+      };
+    }
   }
 }

@@ -184,6 +184,28 @@ export class UsersService {
   }
 
   /**
+   * Get user by auth_user_id (for fallback authentication)
+   * This is used when the main /me endpoint fails
+   */
+  async findByAuthUserId(authUserId: string) {
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('users')
+      .select('id, role, organization_id, clinic_id, full_name')
+      .eq('auth_user_id', authUserId)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        throw new NotFoundException(`User with auth_user_id ${authUserId} not found`);
+      }
+      throw new InternalServerErrorException(`Failed to fetch user: ${error.message || 'Unknown error'}`);
+    }
+
+    return data;
+  }
+
+  /**
    * Create a new user with auth user creation and invitation email
    * This replaces the Edge Function functionality in the backend
    */
