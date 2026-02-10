@@ -7,14 +7,15 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
+import { UserContext } from '../auth/auth.guard';
 import { CreateOrganizationDto, UpdateOrganizationDto } from './dto';
 
 @Injectable()
 export class OrganizationsService {
   constructor(private supabaseService: SupabaseService) {}
 
-  async findAll() {
-    const { data, error } = await this.supabaseService
+  async findAll(user: UserContext) {
+    let query = this.supabaseService
       .getClient()
       .from('organizations')
       .select(`
@@ -26,11 +27,36 @@ export class OrganizationsService {
         )
       `);
 
-    if (error) throw error;
-    return data;
+    // Apply access control: org_admin can only see their own organization
+    if (user.role === 'org_admin') {
+      if (!user.organization_id) {
+        throw new ForbiddenException('Organization admin must be associated with an organization');
+      }
+      query = query.eq('id', user.organization_id);
+    }
+    // super_admin can see all organizations (no filter)
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Error fetching organizations:', error);
+      throw new BadRequestException(`Failed to fetch organizations: ${error.message || 'Unknown error'}`);
+    }
+    return data || [];
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, user: UserContext) {
+    // Validate access: org_admin can only access their own organization
+    if (user.role === 'org_admin') {
+      if (!user.organization_id) {
+        throw new ForbiddenException('Organization admin must be associated with an organization');
+      }
+      if (user.organization_id !== id) {
+        throw new ForbiddenException('Access denied: You can only access your own organization');
+      }
+    }
+    // super_admin can access any organization
+
     const { data, error } = await this.supabaseService
       .getClient()
       .from('organizations')
@@ -38,7 +64,12 @@ export class OrganizationsService {
       .eq('id', id)
       .single();
 
-    if (error) throw new NotFoundException(`Organization with id ${id} not found`);
+    if (error) {
+      if (error.code === 'PGRST116') {
+        throw new NotFoundException(`Organization with id ${id} not found`);
+      }
+      throw new BadRequestException(`Failed to fetch organization: ${error.message || 'Unknown error'}`);
+    }
     return data;
   }
 
@@ -54,7 +85,18 @@ export class OrganizationsService {
     return data;
   }
 
-  async update(id: string, updateOrganizationDto: UpdateOrganizationDto) {
+  async update(id: string, updateOrganizationDto: UpdateOrganizationDto, user: UserContext) {
+    // Validate access: org_admin can only update their own organization
+    if (user.role === 'org_admin') {
+      if (!user.organization_id) {
+        throw new ForbiddenException('Organization admin must be associated with an organization');
+      }
+      if (user.organization_id !== id) {
+        throw new ForbiddenException('Access denied: You can only update your own organization');
+      }
+    }
+    // super_admin can update any organization
+
     const { data, error } = await this.supabaseService
       .getClient()
       .from('organizations')
@@ -63,7 +105,17 @@ export class OrganizationsService {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      if (error.code === 'PGRST116') {
+        throw new NotFoundException(`Organization with id ${id} not found`);
+      }
+      if (error.message?.toLowerCase().includes('permission') || 
+          error.message?.toLowerCase().includes('row level security') ||
+          error.message?.toLowerCase().includes('rls')) {
+        throw new ForbiddenException(`Access denied: ${error.message}`);
+      }
+      throw new BadRequestException(`Failed to update organization: ${error.message || 'Unknown error'}`);
+    }
     return data;
   }
 
@@ -107,11 +159,22 @@ export class OrganizationsService {
     return { success: true };
   }
 
-  async getClinicsByOrganization(organizationId: string) {
+  async getClinicsByOrganization(organizationId: string, user: UserContext) {
     // Validate organizationId
     if (!organizationId || organizationId.trim() === '') {
       throw new BadRequestException('Organization ID is required.');
     }
+
+    // Validate access: org_admin can only access clinics from their own organization
+    if (user.role === 'org_admin') {
+      if (!user.organization_id) {
+        throw new ForbiddenException('Organization admin must be associated with an organization');
+      }
+      if (user.organization_id !== organizationId) {
+        throw new ForbiddenException('Access denied: You can only access clinics from your own organization');
+      }
+    }
+    // super_admin can access clinics from any organization
 
     try {
       const { data, error } = await this.supabaseService
@@ -159,11 +222,22 @@ export class OrganizationsService {
     }
   }
 
-  async getUsersByOrganization(organizationId: string) {
+  async getUsersByOrganization(organizationId: string, user: UserContext) {
     // Validate organizationId
     if (!organizationId || organizationId.trim() === '') {
       throw new BadRequestException('Organization ID is required.');
     }
+
+    // Validate access: org_admin can only access users from their own organization
+    if (user.role === 'org_admin') {
+      if (!user.organization_id) {
+        throw new ForbiddenException('Organization admin must be associated with an organization');
+      }
+      if (user.organization_id !== organizationId) {
+        throw new ForbiddenException('Access denied: You can only access users from your own organization');
+      }
+    }
+    // super_admin can access users from any organization
 
     try {
       const { data, error } = await this.supabaseService
@@ -224,11 +298,22 @@ export class OrganizationsService {
     }
   }
 
-  async getSubscriptionsByOrganization(organizationId: string) {
+  async getSubscriptionsByOrganization(organizationId: string, user: UserContext) {
     // Validate organizationId
     if (!organizationId || organizationId.trim() === '') {
       throw new BadRequestException('Organization ID is required.');
     }
+
+    // Validate access: org_admin can only access subscriptions from their own organization
+    if (user.role === 'org_admin') {
+      if (!user.organization_id) {
+        throw new ForbiddenException('Organization admin must be associated with an organization');
+      }
+      if (user.organization_id !== organizationId) {
+        throw new ForbiddenException('Access denied: You can only access subscriptions from your own organization');
+      }
+    }
+    // super_admin can access subscriptions from any organization
 
     try {
       const { data, error } = await this.supabaseService

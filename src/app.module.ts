@@ -33,6 +33,8 @@ import { SoapModule } from './soap/soap.module';
 import { WhiteboardModule } from './whiteboard/whiteboard.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { ZoomModule } from './zoom/zoom.module';
+import { PaymentsModule } from './payments/payments.module';
+import { GoogleModule } from './google/google.module';
 import configuration from './config/configuration';
 
 @Module({
@@ -80,6 +82,8 @@ import configuration from './config/configuration';
     WhiteboardModule,
     OnboardingModule,
     ZoomModule,
+    PaymentsModule,
+    GoogleModule,
   ],
   controllers: [AppController],
   providers: [

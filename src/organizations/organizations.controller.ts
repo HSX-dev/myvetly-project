@@ -8,10 +8,12 @@ import {
   Delete,
   HttpCode,
   HttpStatus,
+  Request,
 } from '@nestjs/common';
 import { OrganizationsService } from './organizations.service';
 import { CreateOrganizationDto, UpdateOrganizationDto } from './dto';
 import { CleanDtoPipe } from '../utils/pipes/clean-dto.pipe';
+import { UserContext } from '../auth/auth.guard';
 
 @Controller('organizations')
 export class OrganizationsController {
@@ -24,8 +26,8 @@ export class OrganizationsController {
   }
 
   @Get()
-  findAll() {
-    return this.organizationsService.findAll();
+  findAll(@Request() req: { user: UserContext }) {
+    return this.organizationsService.findAll(req.user);
   }
 
   @Get('plans')
@@ -34,31 +36,32 @@ export class OrganizationsController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.organizationsService.findOne(id);
+  findOne(@Param('id') id: string, @Request() req: { user: UserContext }) {
+    return this.organizationsService.findOne(id, req.user);
   }
 
   @Get(':id/clinics')
-  getClinics(@Param('id') id: string) {
-    return this.organizationsService.getClinicsByOrganization(id);
+  getClinics(@Param('id') id: string, @Request() req: { user: UserContext }) {
+    return this.organizationsService.getClinicsByOrganization(id, req.user);
   }
 
   @Get(':id/users')
-  getUsers(@Param('id') id: string) {
-    return this.organizationsService.getUsersByOrganization(id);
+  getUsers(@Param('id') id: string, @Request() req: { user: UserContext }) {
+    return this.organizationsService.getUsersByOrganization(id, req.user);
   }
 
   @Get(':id/subscriptions')
-  getSubscriptions(@Param('id') id: string) {
-    return this.organizationsService.getSubscriptionsByOrganization(id);
+  getSubscriptions(@Param('id') id: string, @Request() req: { user: UserContext }) {
+    return this.organizationsService.getSubscriptionsByOrganization(id, req.user);
   }
 
   @Patch(':id')
   update(
     @Param('id') id: string,
     @Body(CleanDtoPipe) updateOrganizationDto: UpdateOrganizationDto,
+    @Request() req: { user: UserContext },
   ) {
-    return this.organizationsService.update(id, updateOrganizationDto);
+    return this.organizationsService.update(id, updateOrganizationDto, req.user);
   }
 
   @Delete(':id')

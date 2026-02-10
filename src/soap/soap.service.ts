@@ -1,10 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { UserContext } from '../auth/auth.guard';
+import { AiService } from '../ai/ai.service';
 
 @Injectable()
 export class SoapService {
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(
+    private supabaseService: SupabaseService,
+    private aiService: AiService,
+  ) {}
 
   async getSOAPAudit(petId: string, user: UserContext) {
     // Validate user has access to this pet's clinic
@@ -639,6 +643,285 @@ export class SoapService {
       discharge: discharge,
       vitals: vitalsWithSupervisors,
       physical: physicalWithSupervisors
+    };
+  }
+
+  async getBodyMapById(id: string, user: UserContext) {
+    // Get body map
+    const { data: bodyMap, error: bodyMapError } = await this.supabaseService
+      .getClient()
+      .from('soap_body_maps')
+      .select('*, soap_notes!soap_note_id(appointment_id, pet_id)')
+      .eq('id', id)
+      .single();
+
+    if (bodyMapError || !bodyMap) {
+      if (bodyMapError?.code === 'PGRST116') {
+        return null; // No rows found
+      }
+      throw new Error(`Body map with id ${id} not found`);
+    }
+
+    // Get appointment to check clinic access
+    const appointmentId = (bodyMap.soap_notes as any)?.appointment_id;
+    if (!appointmentId) {
+      throw new Error(`Appointment not found for body map ${id}`);
+    }
+
+    const { data: appointment, error: appointmentError } = await this.supabaseService
+      .getClient()
+      .from('appointments')
+      .select('tenant_id')
+      .eq('id', appointmentId)
+      .single();
+
+    if (appointmentError || !appointment) {
+      throw new Error(`Appointment not found for body map ${id}`);
+    }
+
+    // Validate clinic access
+    if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
+      throw new Error('Access denied: You do not have access to this body map');
+    }
+
+    // Remove nested soap_notes from response
+    const { soap_notes, ...bodyMapData } = bodyMap;
+    return bodyMapData;
+  }
+
+  async createBodyMap(data: any, user: UserContext) {
+    // Validate SOAP note access
+    const { data: soapNote, error: soapError } = await this.supabaseService
+      .getClient()
+      .from('soap_notes')
+      .select('id, appointment_id')
+      .eq('id', data.soap_note_id)
+      .single();
+
+    if (soapError || !soapNote) {
+      throw new Error(`SOAP note with id ${data.soap_note_id} not found`);
+    }
+
+    // Get appointment to check clinic access
+    const { data: appointment, error: appointmentError } = await this.supabaseService
+      .getClient()
+      .from('appointments')
+      .select('tenant_id')
+      .eq('id', soapNote.appointment_id)
+      .single();
+
+    if (appointmentError || !appointment) {
+      throw new Error(`Appointment not found for SOAP note ${data.soap_note_id}`);
+    }
+
+    // Validate clinic access
+    if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
+      throw new Error('Access denied: You do not have access to this SOAP note');
+    }
+
+    // Create body map
+    const { data: bodyMap, error } = await this.supabaseService
+      .getClient()
+      .from('soap_body_maps')
+      .insert(data)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to create body map: ${error.message || 'Unknown error'}`);
+    }
+
+    return bodyMap;
+  }
+
+  async updateBodyMap(id: string, data: any, user: UserContext) {
+    // First get the body map to validate access
+    const bodyMap = await this.getBodyMapById(id, user);
+    if (!bodyMap) {
+      throw new Error(`Body map with id ${id} not found`);
+    }
+
+    // Update body map
+    const { data: updatedBodyMap, error } = await this.supabaseService
+      .getClient()
+      .from('soap_body_maps')
+      .update(data)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to update body map: ${error.message || 'Unknown error'}`);
+    }
+
+    return updatedBodyMap;
+  }
+
+  async deleteBodyMap(id: string, user: UserContext) {
+    // First get the body map to validate access and get thumbnail URL
+    const bodyMap = await this.getBodyMapById(id, user);
+    if (!bodyMap) {
+      throw new Error(`Body map with id ${id} not found`);
+    }
+
+    // Delete body map
+    const { error } = await this.supabaseService
+      .getClient()
+      .from('soap_body_maps')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      throw new Error(`Failed to delete body map: ${error.message || 'Unknown error'}`);
+    }
+
+    // Return thumbnail URL so frontend can delete it from storage
+    return {
+      success: true,
+      thumbnail_url: (bodyMap as any).thumbnail_url,
+    };
+  }
+
+  async expandSOAP(
+    soapNoteId: string,
+    section: 'subjective' | 'objective' | 'assessment' | 'plan' | 'all' | undefined,
+    currentData: any,
+    user: UserContext,
+  ): Promise<any> {
+    // First, get the SOAP note to validate access
+    const { data: soapNote, error: soapError } = await this.supabaseService
+      .getClient()
+      .from('soap_notes')
+      .select('id, appointment_id, pet_id')
+      .eq('id', soapNoteId)
+      .single();
+
+    if (soapError || !soapNote) {
+      throw new Error(`SOAP note with id ${soapNoteId} not found`);
+    }
+
+    // Get appointment to check clinic access
+    const { data: appointment, error: appointmentError } = await this.supabaseService
+      .getClient()
+      .from('appointments')
+      .select('id, tenant_id')
+      .eq('id', soapNote.appointment_id)
+      .single();
+
+    if (appointmentError || !appointment) {
+      throw new Error(`Appointment not found for SOAP note ${soapNoteId}`);
+    }
+
+    // Validate clinic access
+    if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
+      throw new Error('Access denied: You do not have access to this SOAP note');
+    }
+
+    const result = await this.aiService.expandSoap(
+      {
+        appointment_id: appointment.id,
+        section,
+        current_data: currentData,
+      },
+      user.auth_user_id,
+    );
+
+    // Update the SOAP note with the expanded content
+    await this.supabaseService
+      .getClient()
+      .from('soap_notes')
+      .update(result.expanded)
+      .eq('id', soapNoteId);
+
+    // Update snapshot to include soap_notes_id for easier querying
+    if (result.snapshot_id) {
+      await this.supabaseService
+        .getClient()
+        .from('soap_snapshots')
+        .update({ soap_notes_id: soapNoteId })
+        .eq('id', result.snapshot_id);
+    }
+
+    return {
+      version_id: result.snapshot_id,
+      updated_at: new Date().toISOString(),
+    };
+  }
+
+  async undoSOAPExpand(soapNoteId: string, user: UserContext): Promise<any> {
+    // First, get the SOAP note to validate access
+    const { data: soapNote, error: soapError } = await this.supabaseService
+      .getClient()
+      .from('soap_notes')
+      .select('id, appointment_id, pet_id')
+      .eq('id', soapNoteId)
+      .single();
+
+    if (soapError || !soapNote) {
+      throw new Error(`SOAP note with id ${soapNoteId} not found`);
+    }
+
+    // Get appointment to check clinic access
+    const { data: appointment, error: appointmentError } = await this.supabaseService
+      .getClient()
+      .from('appointments')
+      .select('id, tenant_id')
+      .eq('id', soapNote.appointment_id)
+      .single();
+
+    if (appointmentError || !appointment) {
+      throw new Error(`Appointment not found for SOAP note ${soapNoteId}`);
+    }
+
+    // Validate clinic access
+    if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
+      throw new Error('Access denied: You do not have access to this SOAP note');
+    }
+
+    // Get current SOAP note data to save as snapshot before reverting
+    const { data: currentSoapData } = await this.supabaseService
+      .getClient()
+      .from('soap_notes')
+      .select('subjective, objective, assessment, plan')
+      .eq('id', soapNoteId)
+      .single();
+
+    // Find the latest snapshot for this SOAP note
+    const { data: latestSnapshot, error: snapshotError } = await this.supabaseService
+      .getClient()
+      .from('soap_snapshots')
+      .select('*')
+      .eq('soap_notes_id', soapNoteId)
+      .is('undone_at', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (snapshotError || !latestSnapshot) {
+      throw new Error('No active AI expansion found to undo.');
+    }
+
+    // Revert SOAP note to snapshot data
+    const { error: updateError } = await this.supabaseService
+      .getClient()
+      .from('soap_notes')
+      .update(latestSnapshot.snapshot_data)
+      .eq('id', soapNoteId);
+
+    if (updateError) {
+      throw new Error(`Failed to revert SOAP note: ${updateError.message}`);
+    }
+
+    // Mark snapshot as undone
+    await this.supabaseService
+      .getClient()
+      .from('soap_snapshots')
+      .update({ undone_at: new Date().toISOString() })
+      .eq('id', latestSnapshot.id);
+
+    return {
+      reverted_version_id: latestSnapshot.id,
+      updated_at: new Date().toISOString(),
     };
   }
 }

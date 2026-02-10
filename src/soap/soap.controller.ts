@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Param, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards } from '@nestjs/common';
 import { SoapService } from './soap.service';
 import { GetUser } from '../utils/decorators/get-user.decorator';
 import { AuthGuard } from '../auth/auth.guard';
@@ -40,6 +40,26 @@ export class SoapController {
     return this.soapService.getBodyMapsBySoapNote(soapNoteId, user);
   }
 
+  @Get('body-maps/:id')
+  getBodyMapById(@Param('id') id: string, @GetUser() user: UserContext) {
+    return this.soapService.getBodyMapById(id, user);
+  }
+
+  @Post('body-maps')
+  createBodyMap(@Body() data: any, @GetUser() user: UserContext) {
+    return this.soapService.createBodyMap(data, user);
+  }
+
+  @Patch('body-maps/:id')
+  updateBodyMap(@Param('id') id: string, @Body() data: any, @GetUser() user: UserContext) {
+    return this.soapService.updateBodyMap(id, data, user);
+  }
+
+  @Delete('body-maps/:id')
+  deleteBodyMap(@Param('id') id: string, @GetUser() user: UserContext) {
+    return this.soapService.deleteBodyMap(id, user);
+  }
+
   @Post()
   createSoapNote(@Body() data: any, @GetUser() user: UserContext) {
     return this.soapService.createSoapNote(data, user);
@@ -53,6 +73,24 @@ export class SoapController {
   @Get('has-active-expansion/:soapNoteId')
   hasActiveExpansion(@Param('soapNoteId') soapNoteId: string, @GetUser() user: UserContext) {
     return this.soapService.hasActiveExpansion(soapNoteId, user);
+  }
+
+  @Post('expand/:soapNoteId')
+  expandSOAP(
+    @Param('soapNoteId') soapNoteId: string,
+    @Body() body: { section?: string; current_data?: any },
+    @GetUser() user: UserContext,
+  ) {
+    const validSections = ['subjective', 'objective', 'assessment', 'plan', 'all'];
+    const section = body.section && validSections.includes(body.section)
+      ? (body.section as 'subjective' | 'objective' | 'assessment' | 'plan' | 'all')
+      : undefined;
+    return this.soapService.expandSOAP(soapNoteId, section, body.current_data, user);
+  }
+
+  @Post('undo-expand/:soapNoteId')
+  undoSOAPExpand(@Param('soapNoteId') soapNoteId: string, @GetUser() user: UserContext) {
+    return this.soapService.undoSOAPExpand(soapNoteId, user);
   }
 
   @Get('pet/:petId/full')

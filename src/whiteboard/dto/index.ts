@@ -10,6 +10,8 @@ export * from './update-procedure-status.dto';
 export * from './create-location.dto';
 export * from './create-handover-note.dto';
 export * from './reject-invoice-item.dto';
+export * from './create-vitals.dto';
+export * from './update-vitals.dto';
 
 
 

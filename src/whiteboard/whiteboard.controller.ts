@@ -26,6 +26,8 @@ import {
   CreateLocationDto,
   CreateHandoverNoteDto,
   RejectInvoiceItemDto,
+  CreateVitalsDto,
+  UpdateVitalsDto,
 } from './dto/index';
 import { AuthGuard } from '../auth/auth.guard';
 import { UserContext } from '../auth/auth.guard';
@@ -34,7 +36,7 @@ import { CleanDtoPipe } from '../utils/pipes/clean-dto.pipe';
 @Controller('whiteboard')
 @UseGuards(AuthGuard)
 export class WhiteboardController {
-  constructor(private readonly whiteboardService: WhiteboardService) {}
+  constructor(private readonly whiteboardService: WhiteboardService) { }
 
   /**
    * Get all whiteboard patients for a clinic on a given date
@@ -313,6 +315,57 @@ export class WhiteboardController {
     @Request() req: { user: UserContext },
   ) {
     return this.whiteboardService.getHandoverNotes(patientId, shiftDate, shiftType, req.user);
+  }
+
+  /**
+   * Add vitals reading for a whiteboard patient
+   * POST /api/whiteboard/patients/:patientId/vitals
+   */
+  @Post('patients/:patientId/vitals')
+  @HttpCode(HttpStatus.CREATED)
+  addVitals(
+    @Param('patientId') patientId: string,
+    @Body(CleanDtoPipe) createVitalsDto: CreateVitalsDto,
+    @Request() req: { user: UserContext },
+  ) {
+    return this.whiteboardService.addVitals(patientId, createVitalsDto, req.user);
+  }
+
+  /**
+   * Get vitals history for a whiteboard patient
+   * GET /api/whiteboard/patients/:patientId/vitals
+   */
+  @Get('patients/:patientId/vitals')
+  getVitalsHistory(
+    @Param('patientId') patientId: string,
+    @Request() req: { user: UserContext },
+  ) {
+    return this.whiteboardService.getVitalsHistory(patientId, req.user);
+  }
+
+  /**
+   * Get latest vitals for a whiteboard patient
+   * GET /api/whiteboard/patients/:patientId/vitals/latest
+   */
+  @Get('patients/:patientId/vitals/latest')
+  getLatestVitals(
+    @Param('patientId') patientId: string,
+    @Request() req: { user: UserContext },
+  ) {
+    return this.whiteboardService.getLatestVitals(patientId, req.user);
+  }
+
+  /**
+   * Update vitals reading
+   * PATCH /api/whiteboard/vitals/:id
+   */
+  @Patch('vitals/:id')
+  updateVitals(
+    @Param('id') id: string,
+    @Body(CleanDtoPipe) updateVitalsDto: UpdateVitalsDto,
+    @Request() req: { user: UserContext },
+  ) {
+    return this.whiteboardService.updateVitals(id, updateVitalsDto, req.user);
   }
 }
 
