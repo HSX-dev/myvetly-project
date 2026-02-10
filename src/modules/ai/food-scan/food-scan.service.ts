@@ -87,7 +87,7 @@ export class FoodScanService extends BaseAiService {
         client_id: pet.client_id,
         pet_id: dto.pet_id,
         food_name: result.food_name || dto.food_name,
-        food_type: result.food_type || dto.food_type,
+        food_type: result.food_type || dto.food_type || 'other',
         scan_type: result.scan_type || dto.scan_type || 'food_item',
         model_used: modelUsed,
         ai_response: result,
@@ -274,4 +274,5 @@ TASK:
 
 Return JSON only.`;
   }
+
 }

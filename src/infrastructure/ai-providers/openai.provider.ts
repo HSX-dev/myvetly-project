@@ -48,11 +48,24 @@ export class OpenaiProvider {
   }
 
   async analyzeImage(
-    imageBase64: string,
+    imageUrlOrBase64: string,
     prompt: string,
     options: { model?: string; maxTokens?: number } = {},
   ): Promise<AiChatResponse> {
     const { model = 'gpt-4o', maxTokens = 1000 } = options;
+
+    // Determine if it's a URL or base64
+    let imageUrl: string;
+    if (imageUrlOrBase64.startsWith('http://') || imageUrlOrBase64.startsWith('https://')) {
+      // It's a URL, use it directly
+      imageUrl = imageUrlOrBase64;
+    } else if (imageUrlOrBase64.startsWith('data:')) {
+      // It's already a data URL
+      imageUrl = imageUrlOrBase64;
+    } else {
+      // It's base64, convert to data URL
+      imageUrl = `data:image/jpeg;base64,${imageUrlOrBase64}`;
+    }
 
     const response = await this.openai.chat.completions.create({
       model,
@@ -64,9 +77,7 @@ export class OpenaiProvider {
             {
               type: 'image_url',
               image_url: {
-                url: imageBase64.startsWith('data:')
-                  ? imageBase64
-                  : `data:image/jpeg;base64,${imageBase64}`,
+                url: imageUrl,
               },
             },
           ],
