@@ -924,5 +924,87 @@ export class SoapService {
       updated_at: new Date().toISOString(),
     };
   }
+
+  /**
+   * Get public URL for base body map image
+   */
+  async getBaseImageUrl(species: string, user: UserContext): Promise<{ url: string }> {
+    const filePath = `base-images/${species}.png`;
+    const supabase = this.supabaseService.getClient();
+    
+    const { data: { publicUrl } } = supabase.storage
+      .from('body-maps')
+      .getPublicUrl(filePath);
+    
+    return { url: publicUrl };
+  }
+
+  /**
+   * Get signed URL for base body map image
+   */
+  async getSignedBaseImageUrl(
+    species: string,
+    user: UserContext,
+    expiresIn: number = 3600,
+  ): Promise<{ url: string }> {
+    const filePath = `base-images/${species}.png`;
+    const supabase = this.supabaseService.getClient();
+    
+    const { data, error } = await supabase.storage
+      .from('body-maps')
+      .createSignedUrl(filePath, expiresIn);
+    
+    if (error) {
+      throw new Error(`Failed to create signed URL: ${error.message}`);
+    }
+    
+    return { url: data.signedUrl };
+  }
+
+  /**
+   * List files in storage folder
+   */
+  async listStorageFiles(folder: string, user: UserContext): Promise<any[]> {
+    const supabase = this.supabaseService.getClient();
+    
+    const { data, error } = await supabase.storage
+      .from('body-maps')
+      .list(folder);
+    
+    if (error) {
+      throw new Error(`Failed to list files: ${error.message}`);
+    }
+    
+    return data || [];
+  }
+
+  /**
+   * Verify if base image exists for a species
+   */
+  async verifyImageExists(species: string, user: UserContext): Promise<{ exists: boolean }> {
+    try {
+      const supabase = this.supabaseService.getClient();
+      
+      const { data, error } = await supabase.storage
+        .from('body-maps')
+        .list('base-images', {
+          search: `${species}.png`,
+        });
+      
+      if (error) {
+        // Listing may not be allowed by policies - assume it exists
+        return { exists: true };
+      }
+      
+      const exists = (data || []).some(
+        (file) => file.name.toLowerCase() === `${species}.png`.toLowerCase(),
+      );
+      
+      return { exists };
+    } catch (error) {
+      // Don't fail completely - assume it might exist
+      return { exists: true };
+    }
+  }
 }
 

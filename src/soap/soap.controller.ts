@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { SoapService } from './soap.service';
 import { GetUser } from '../utils/decorators/get-user.decorator';
 import { AuthGuard } from '../auth/auth.guard';
@@ -96,6 +96,34 @@ export class SoapController {
   @Get('pet/:petId/full')
   getSoapNoteByPet(@Param('petId') petId: string, @GetUser() user: UserContext) {
     return this.soapService.getSoapNoteByPet(petId, user);
+  }
+
+  @Get('body-maps/storage/base-image-url/:species')
+  getBaseImageUrl(@Param('species') species: string, @GetUser() user: UserContext) {
+    return this.soapService.getBaseImageUrl(species, user);
+  }
+
+  @Get('body-maps/storage/signed-url/:species')
+  getSignedBaseImageUrl(
+    @Param('species') species: string,
+    @GetUser() user: UserContext,
+    @Query('expiresIn') expiresIn?: string,
+  ) {
+    const expiresInSeconds = expiresIn ? parseInt(expiresIn, 10) : 3600;
+    return this.soapService.getSignedBaseImageUrl(species, user, expiresInSeconds);
+  }
+
+  @Get('body-maps/storage/list/:folder')
+  listStorageFiles(
+    @Param('folder') folder: string,
+    @GetUser() user: UserContext,
+  ) {
+    return this.soapService.listStorageFiles(folder, user);
+  }
+
+  @Get('body-maps/storage/verify/:species')
+  verifyImageExists(@Param('species') species: string, @GetUser() user: UserContext) {
+    return this.soapService.verifyImageExists(species, user);
   }
 
   // This must come AFTER all more specific routes

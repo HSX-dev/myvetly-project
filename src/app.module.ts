@@ -35,6 +35,7 @@ import { OnboardingModule } from './onboarding/onboarding.module';
 import { ZoomModule } from './zoom/zoom.module';
 import { PaymentsModule } from './payments/payments.module';
 import { GoogleModule } from './google/google.module';
+import { SearchModule } from './search/search.module';
 import configuration from './config/configuration';
 
 @Module({
@@ -84,6 +85,7 @@ import configuration from './config/configuration';
     ZoomModule,
     PaymentsModule,
     GoogleModule,
+    SearchModule,
   ],
   controllers: [AppController],
   providers: [
