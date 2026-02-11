@@ -126,6 +126,135 @@ export class SoapController {
     return this.soapService.verifyImageExists(species, user);
   }
 
+  @Get('discharge-instructions/storage/public-url')
+  getDischargeInstructionsPublicUrl(
+    @Query('filePath') filePath: string,
+    @GetUser() user: UserContext,
+  ) {
+    return this.soapService.getDischargeInstructionsPublicUrl(filePath, user);
+  }
+
+  @Post('body-maps/storage/upload-thumbnail')
+  uploadBodyMapThumbnail(
+    @Body() body: { soapNoteId: string; bodyMapId: string; fileData: string },
+    @GetUser() user: UserContext,
+  ) {
+    return this.soapService.uploadBodyMapThumbnail(
+      body.soapNoteId,
+      body.bodyMapId,
+      body.fileData,
+      user,
+    );
+  }
+
+  @Delete('body-maps/storage/remove-thumbnail')
+  removeBodyMapThumbnail(
+    @Query('filePath') filePath: string,
+    @GetUser() user: UserContext,
+  ) {
+    return this.soapService.removeBodyMapThumbnail(filePath, user);
+  }
+
+  // SOAP Vitals endpoints
+  @Post('vitals/:soapNoteId')
+  createSoapVitals(
+    @Param('soapNoteId') soapNoteId: string,
+    @Body() data: any,
+    @GetUser() user: UserContext,
+  ) {
+    return this.soapService.createSoapVitals(data, soapNoteId, user);
+  }
+
+  @Patch('vitals/:id')
+  updateSoapVitals(
+    @Param('id') id: string,
+    @Body() data: any,
+    @GetUser() user: UserContext,
+  ) {
+    return this.soapService.updateSoapVitals(id, data, user);
+  }
+
+  // SOAP Physical Exam endpoints
+  @Post('physical/:soapNoteId')
+  createSoapPhysicalExam(
+    @Param('soapNoteId') soapNoteId: string,
+    @Body() data: any,
+    @GetUser() user: UserContext,
+  ) {
+    return this.soapService.createSoapPhysicalExam(data, soapNoteId, user);
+  }
+
+  @Patch('physical/:id')
+  updateSoapPhysicalExam(
+    @Param('id') id: string,
+    @Body() data: any,
+    @GetUser() user: UserContext,
+  ) {
+    return this.soapService.updateSoapPhysicalExam(id, data, user);
+  }
+
+  // Treatment Plan endpoints
+  @Post('treatment-plans')
+  createTreatmentPlan(
+    @Body() data: any,
+    @GetUser() user: UserContext,
+  ) {
+    return this.soapService.createTreatmentPlan(data, user);
+  }
+
+  @Patch('treatment-plans/:id/status')
+  updateTreatmentPlanStatus(
+    @Param('id') id: string,
+    @Body() body: { status: string },
+    @GetUser() user: UserContext,
+  ) {
+    return this.soapService.updateTreatmentPlanStatus(id, body.status, user);
+  }
+
+  // Discharge Instructions endpoints
+  @Post('discharge-instructions')
+  createDischargeInstructions(
+    @Body() data: any,
+    @GetUser() user: UserContext,
+  ) {
+    return this.soapService.createDischargeInstructions(data, user);
+  }
+
+  @Get('discharge-instructions/appointment/:appointmentId')
+  getDischargeInstructionsByAppointment(
+    @Param('appointmentId') appointmentId: string,
+    @GetUser() user: UserContext,
+  ) {
+    return this.soapService.getDischargeInstructionsByAppointment(appointmentId, user);
+  }
+
+  @Patch('discharge-instructions/:id/mark-provided')
+  markDischargeInstructionsProvided(
+    @Param('id') id: string,
+    @GetUser() user: UserContext,
+  ) {
+    return this.soapService.markDischargeInstructionsProvided(id, user);
+  }
+
+  @Post('discharge-instructions/upload')
+  uploadDischargeInstructionsFile(
+    @Body() body: {
+      appointmentId: string;
+      filePath: string;
+      fileData: string; // base64 encoded
+      contentType: string;
+    },
+    @GetUser() user: UserContext,
+  ) {
+    return this.soapService.uploadDischargeInstructionsFile(
+      body.appointmentId,
+      body.filePath,
+      body.fileData,
+      body.contentType,
+      user,
+    );
+  }
+
   // This must come AFTER all more specific routes
   @Get(':id')
   getSoapNoteById(@Param('id') id: string, @GetUser() user: UserContext) {

@@ -933,6 +933,133 @@ export class UsersService {
     return { success: true };
   }
 
+  /**
+   * Get all states
+   */
+  async getStates() {
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('states')
+      .select('id, code, name')
+      .order('name');
+
+    if (error) {
+      throw new InternalServerErrorException(`Failed to fetch states: ${error.message}`);
+    }
+
+    return data || [];
+  }
+
+  /**
+   * Get licensed states for a user
+   */
+  async getUserLicensedStates(userId: string, user: UserContext) {
+    // Validate access - users can only see their own licensed states, or admins can see any
+    if (user.role !== 'super_admin' && user.user_id !== userId) {
+      // Check if user is in same organization/clinic
+      const { data: targetUser } = await this.supabaseService
+        .getClient()
+        .from('users')
+        .select('organization_id, clinic_id')
+        .eq('id', userId)
+        .single();
+
+      if (!targetUser) {
+        throw new NotFoundException(`User with id ${userId} not found`);
+      }
+
+      if (user.role === 'org_admin') {
+        if (targetUser.organization_id !== user.organization_id) {
+          throw new ForbiddenException('Access denied');
+        }
+      } else if (user.clinic_id !== targetUser.clinic_id || user.organization_id !== targetUser.organization_id) {
+        throw new ForbiddenException('Access denied');
+      }
+    }
+
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('user_licensed_states')
+      .select(`
+        id,
+        user_id,
+        state_id,
+        state_code,
+        created_at,
+        state:states(id, code, name)
+      `)
+      .eq('user_id', userId)
+      .order('created_at');
+
+    if (error) {
+      throw new InternalServerErrorException(`Failed to fetch licensed states: ${error.message}`);
+    }
+
+    // Add state_code with fallback to state.code
+    return (data || []).map((item: any) => ({
+      ...item,
+      state_code: item.state_code || item.state?.code || null,
+    }));
+  }
+
+  /**
+   * Update licensed states for a user (replaces all existing states)
+   */
+  async updateUserLicensedStates(userId: string, stateIds: string[], user: UserContext) {
+    // Validate access - users can only update their own licensed states, or admins can update any
+    if (user.role !== 'super_admin' && user.user_id !== userId) {
+      // Check if user is in same organization/clinic
+      const { data: targetUser } = await this.supabaseService
+        .getClient()
+        .from('users')
+        .select('organization_id, clinic_id')
+        .eq('id', userId)
+        .single();
+
+      if (!targetUser) {
+        throw new NotFoundException(`User with id ${userId} not found`);
+      }
+
+      if (user.role === 'org_admin') {
+        if (targetUser.organization_id !== user.organization_id) {
+          throw new ForbiddenException('Access denied');
+        }
+      } else if (user.clinic_id !== targetUser.clinic_id || user.organization_id !== targetUser.organization_id) {
+        throw new ForbiddenException('Access denied');
+      }
+    }
+
+    // Delete all existing licensed states for the user
+    const { error: deleteError } = await this.supabaseService
+      .getClient()
+      .from('user_licensed_states')
+      .delete()
+      .eq('user_id', userId);
+
+    if (deleteError) {
+      throw new InternalServerErrorException(`Failed to delete existing licensed states: ${deleteError.message}`);
+    }
+
+    // Insert new licensed states if any
+    if (stateIds.length > 0) {
+      const newStates = stateIds.map(stateId => ({
+        user_id: userId,
+        state_id: stateId,
+      }));
+
+      const { error: insertError } = await this.supabaseService
+        .getClient()
+        .from('user_licensed_states')
+        .insert(newStates);
+
+      if (insertError) {
+        throw new InternalServerErrorException(`Failed to insert licensed states: ${insertError.message}`);
+      }
+    }
+
+    return { success: true };
+  }
+
   async getCurrentUserProfile(user: any) {
     if (!user || !user.user_id) {
       throw new NotFoundException('User not found');

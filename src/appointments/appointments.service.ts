@@ -662,6 +662,69 @@ export class AppointmentsService {
   }
 
   /**
+   * Get appointments by client ID and service type (e.g., for boarding reservations)
+   */
+  async findByClientAndServiceType(
+    clientId: string,
+    serviceType: string,
+    includePast: boolean = false,
+    user: UserContext,
+  ) {
+    // Validate user has access to this client's clinic
+    const { data: client, error: clientError } = await this.supabaseService
+      .getClient()
+      .from('clients')
+      .select('tenant_id')
+      .eq('id', clientId)
+      .single();
+
+    if (clientError || !client) {
+      throw new NotFoundException(`Client with id ${clientId} not found`);
+    }
+
+    // Validate clinic access
+    if (client.tenant_id && user?.clinic_id !== client.tenant_id && user?.role !== 'super_admin') {
+      throw new Error('Access denied: You do not have access to this client');
+    }
+
+    let query = this.supabaseService
+      .getClient()
+      .from('appointments')
+      .select(`
+        id,
+        appointment_time,
+        service_type,
+        status,
+        pet_id,
+        notes,
+        pets (
+          id,
+          name,
+          species,
+          breed
+        )
+      `)
+      .eq('client_id', clientId)
+      .eq('service_type', serviceType);
+
+    if (!includePast) {
+      const now = new Date();
+      query = query.gte('appointment_time', now.toISOString());
+    }
+
+    const { data, error } = await query.order('appointment_time', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching appointments by client and service type:', error);
+      throw new InternalServerErrorException(
+        `Failed to fetch appointments: ${error.message || 'Unknown error'}`,
+      );
+    }
+
+    return data || [];
+  }
+
+  /**
    * Check if an appointment is telehealth based on service type
    */
   private isTelehealthAppointment(serviceType: string): boolean {
@@ -907,5 +970,134 @@ export class AppointmentsService {
         error: error instanceof Error ? error.message : 'Unknown error occurred',
       };
     }
+  }
+
+  /**
+   * Get available veterinarians for a clinic (veterinarian and clinic_admin roles only)
+   */
+  async getAvailableVeterinarians(clinicId: string, user: UserContext) {
+    // Validate clinic access
+    if (user.role !== 'super_admin' && user.clinic_id !== clinicId) {
+      throw new BadRequestException('Access denied: Cannot access veterinarians for other clinics');
+    }
+
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('users')
+      .select('id, full_name, role')
+      .eq('clinic_id', clinicId)
+      .eq('status', 'active')
+      .in('role', ['veterinarian', 'clinic_admin'])
+      .order('full_name', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching available veterinarians:', error);
+      throw new InternalServerErrorException(
+        `Failed to fetch veterinarians: ${error.message || 'Unknown error'}`,
+      );
+    }
+
+    return data || [];
+  }
+
+  /**
+   * Update overdue appointments to no_show status
+   */
+  async updateOverdueAppointments(clinicId: string, user: UserContext) {
+    // Validate clinic access
+    if (user.role !== 'super_admin' && user.clinic_id !== clinicId) {
+      throw new BadRequestException('Access denied: Cannot update appointments for other clinics');
+    }
+
+    const twoHoursAgo = new Date();
+    twoHoursAgo.setHours(twoHoursAgo.getHours() - 2);
+
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('appointments')
+      .update({
+        status: 'no_show',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('tenant_id', clinicId)
+      .eq('status', 'scheduled')
+      .lt('appointment_time', twoHoursAgo.toISOString())
+      .select();
+
+    if (error) {
+      console.error('Error updating overdue appointments:', error);
+      throw new InternalServerErrorException(
+        `Failed to update overdue appointments: ${error.message || 'Unknown error'}`,
+      );
+    }
+
+    return data || [];
+  }
+
+  /**
+   * Get appointments that need attention (overdue scheduled appointments)
+   */
+  async getAppointmentsNeedingAttention(clinicId: string, user: UserContext) {
+    // Validate clinic access
+    if (user.role !== 'super_admin' && user.clinic_id !== clinicId) {
+      throw new BadRequestException('Access denied: Cannot access appointments for other clinics');
+    }
+
+    const now = new Date();
+    const fifteenMinutesAgo = new Date();
+    fifteenMinutesAgo.setMinutes(fifteenMinutesAgo.getMinutes() - 15);
+
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('appointments')
+      .select(`
+        id,
+        appointment_time,
+        service_type,
+        status,
+        payment_status,
+        payment_reference,
+        booking_reference,
+        symptoms,
+        notes,
+        estimated_duration,
+        emergency_level,
+        created_at,
+        updated_at,
+        pet_id,
+        client_id,
+        vet_id,
+        pets(
+          id,
+          name,
+          species,
+          clients(
+            id,
+            users!clients_user_id_fkey(
+              id,
+              full_name,
+              email,
+              phone
+            )
+          )
+        ),
+        veterinarians:vet_id(
+          id,
+          full_name
+        )
+      `)
+      .eq('tenant_id', clinicId)
+      .eq('status', 'scheduled')
+      .lt('appointment_time', fifteenMinutesAgo.toISOString())
+      .order('appointment_time', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching appointments needing attention:', error);
+      throw new InternalServerErrorException(
+        `Failed to fetch appointments: ${error.message || 'Unknown error'}`,
+      );
+    }
+
+    return data || [];
   }
 }

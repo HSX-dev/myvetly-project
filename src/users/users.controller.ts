@@ -144,5 +144,25 @@ export class UsersController {
   hardDelete(@Param('id') id: string, @GetUser() user: any) {
     return this.usersService.hardDelete(id, user);
   }
+
+  @Get('states')
+  getStates() {
+    return this.usersService.getStates();
+  }
+
+  @Get(':id/licensed-states')
+  getUserLicensedStates(@Param('id') id: string, @GetUser() user: any) {
+    return this.usersService.getUserLicensedStates(id, user);
+  }
+
+  @Patch(':id/licensed-states')
+  @HttpCode(HttpStatus.OK)
+  updateUserLicensedStates(
+    @Param('id') id: string,
+    @Body('stateIds') stateIds: string[],
+    @GetUser() user: any,
+  ) {
+    return this.usersService.updateUserLicensedStates(id, stateIds, user);
+  }
 }
 

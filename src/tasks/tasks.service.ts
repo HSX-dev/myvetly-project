@@ -359,7 +359,59 @@ export class TasksService {
       );
     }
 
-    return data || [];
+    if (!data) {
+      return [];
+    }
+
+    // Transform to match frontend DashboardTask format
+    return data.map((task: any) => {
+      // Handle assigned_user (can be array or single object)
+      const assignedUser = Array.isArray(task.assigned_user)
+        ? task.assigned_user[0]
+        : task.assigned_user;
+      
+      // Handle client (can be array or single object or null)
+      const client = task.client_id
+        ? (Array.isArray(task.client) ? task.client[0] : task.client)
+        : null;
+      
+      // Handle client user (can be array or single object or null)
+      const clientUser = client?.users
+        ? (Array.isArray(client.users) ? client.users[0] : client.users)
+        : null;
+      
+      // Handle patient (can be array or single object or null)
+      const patient = task.patient_id
+        ? (Array.isArray(task.patient) ? task.patient[0] : task.patient)
+        : null;
+
+      // Helper to get initials
+      const getInitials = (name: string): string => {
+        return name
+          .split(' ')
+          .map((n) => n[0])
+          .join('')
+          .toUpperCase()
+          .slice(0, 2);
+      };
+
+      return {
+        id: task.id,
+        title: task.title,
+        client: clientUser?.full_name || 'No Client',
+        pet: patient?.name || 'No Patient',
+        dueDate: task.due_date,
+        priority: task.priority as 'high' | 'medium' | 'low',
+        status: task.status as 'pending' | 'in_progress' | 'completed',
+        assignedTo: assignedUser
+          ? {
+              id: assignedUser.id,
+              full_name: assignedUser.full_name || 'Unknown User',
+              initials: getInitials(assignedUser.full_name || 'Unknown User'),
+            }
+          : undefined,
+      };
+    });
   }
 
   /**

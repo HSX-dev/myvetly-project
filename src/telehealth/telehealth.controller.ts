@@ -112,4 +112,30 @@ export class TelehealthController {
   ) {
     return this.telehealthService.createOrUpdateSessionForAppointment(appointmentId, sessionData);
   }
+
+  /**
+   * Update host active status for a telehealth session
+   * PATCH /api/telehealth/sessions/appointment/:appointmentId/host-active
+   */
+  @Patch('sessions/appointment/:appointmentId/host-active')
+  async updateHostActive(
+    @Param('appointmentId') appointmentId: string,
+    @Request() req: { user: UserContext }
+  ) {
+    return this.telehealthService.updateHostActive(appointmentId, req.user);
+  }
+
+  /**
+   * Create or get an existing telehealth session for a client/pet (without appointment)
+   * POST /api/telehealth/sessions/client/:clientId/pet/:petId
+   */
+  @Post('sessions/client/:clientId/pet/:petId')
+  @HttpCode(HttpStatus.CREATED)
+  async createOrGetSessionForClient(
+    @Param('clientId') clientId: string,
+    @Param('petId') petId: string,
+    @Request() req: { user: UserContext }
+  ) {
+    return this.telehealthService.createOrGetSessionForClient(clientId, petId, req.user);
+  }
 }

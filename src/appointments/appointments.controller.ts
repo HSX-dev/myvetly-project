@@ -53,6 +53,32 @@ export class AppointmentsController {
     return this.appointmentsService.findByPet(petId, user);
   }
 
+  @Get('client/:clientId/service-type/:serviceType')
+  findByClientAndServiceType(
+    @Param('clientId') clientId: string,
+    @Param('serviceType') serviceType: string,
+    @GetUser() user: any,
+    @Query('includePast') includePast?: string,
+  ) {
+    const includePastBool = includePast === 'true';
+    return this.appointmentsService.findByClientAndServiceType(clientId, serviceType, includePastBool, user);
+  }
+
+  @Get('clinic/:clinicId/available-veterinarians')
+  getAvailableVeterinarians(@Param('clinicId') clinicId: string, @GetUser() user: any) {
+    return this.appointmentsService.getAvailableVeterinarians(clinicId, user);
+  }
+
+  @Patch('clinic/:clinicId/update-overdue')
+  updateOverdueAppointments(@Param('clinicId') clinicId: string, @GetUser() user: any) {
+    return this.appointmentsService.updateOverdueAppointments(clinicId, user);
+  }
+
+  @Get('clinic/:clinicId/needing-attention')
+  getAppointmentsNeedingAttention(@Param('clinicId') clinicId: string, @GetUser() user: any) {
+    return this.appointmentsService.getAppointmentsNeedingAttention(clinicId, user);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.appointmentsService.findOne(id);

@@ -1,23 +1,22 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Post, Param, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { RemindersService } from './reminders.service';
+import { CreateReminderDto } from './dto/create-reminder.dto';
+import { GetUser } from '../utils/decorators/get-user.decorator';
+import { CleanDtoPipe } from '../utils/pipes/clean-dto.pipe';
 
 @Controller('reminders')
 export class RemindersController {
   constructor(private readonly remindersService: RemindersService) {}
 
-  @Get()
-  findAll() {
-    return this.remindersService.findAll();
-  }
-
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.remindersService.findOne(id);
-  }
-
   @Get('pet/:petId')
-  findByPet(@Param('petId') petId: string) {
-    return this.remindersService.findByPet(petId);
+  findByPet(@Param('petId') petId: string, @GetUser() user: any) {
+    return this.remindersService.findByPet(petId, user);
+  }
+
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  create(@Body(CleanDtoPipe) createReminderDto: CreateReminderDto, @GetUser() user: any) {
+    return this.remindersService.create(createReminderDto, user);
   }
 }
 
