@@ -1,7 +1,8 @@
-import { Controller, Get, Param, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Param, Post, Body, UseGuards, Request, HttpCode, HttpStatus } from '@nestjs/common';
 import { PrescriptionsService } from './prescriptions.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { GetUser } from '../utils/decorators/get-user.decorator';
+import type { UserContext } from '../auth/auth.guard';
 
 @Controller('prescriptions')
 @UseGuards(AuthGuard)
@@ -19,13 +20,24 @@ export class PrescriptionsController {
   }
 
   @Get('pet/:petId')
-  findByPet(@Param('petId') petId: string) {
-    return this.prescriptionsService.findByPet(petId);
+  findByPet(@Param('petId') petId: string, @GetUser() user: UserContext) {
+    return this.prescriptionsService.findByPet(petId, user);
   }
 
   @Get('soap/:soapId')
-  findBySoapId(@Param('soapId') soapId: string, @GetUser() user: any) {
+  findBySoapId(@Param('soapId') soapId: string, @GetUser() user: UserContext) {
     return this.prescriptionsService.findBySoapId(soapId, user);
+  }
+
+  @Get('medications/species/:speciesName')
+  getMedicationsBySpecies(@Param('speciesName') speciesName: string) {
+    return this.prescriptionsService.getMedicationsBySpecies(speciesName);
+  }
+
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  createPrescription(@Body() createDto: any, @GetUser() user: UserContext) {
+    return this.prescriptionsService.createPrescription(createDto, user);
   }
 }
 

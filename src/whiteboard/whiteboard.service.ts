@@ -20,11 +20,13 @@ import {
   CreateLocationDto,
   CreateHandoverNoteDto,
   RejectInvoiceItemDto,
+  CreateVitalsDto,
+  UpdateVitalsDto,
 } from './dto/index';
 
 @Injectable()
 export class WhiteboardService {
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(private supabaseService: SupabaseService) { }
 
   /**
    * Get all whiteboard patients for a clinic on a given date
@@ -1379,6 +1381,215 @@ export class WhiteboardService {
     }
 
     return data || [];
+  }
+
+  /**
+   * Add vitals for a whiteboard patient
+   * Matches original frontend logic exactly
+   */
+  async addVitals(
+    whiteboardPatientId: string,
+    createVitalsDto: CreateVitalsDto,
+    user: UserContext,
+  ): Promise<any> {
+    // Verify patient exists and user has access
+    const { data: patient } = await this.supabaseService
+      .getClient()
+      .from('whiteboard_patients')
+      .select('clinic_id')
+      .eq('id', whiteboardPatientId)
+      .single();
+
+    if (!patient) {
+      throw new NotFoundException(`Whiteboard patient with id ${whiteboardPatientId} not found`);
+    }
+
+    // Validate clinic access
+    if (user.role !== 'super_admin' && user.clinic_id !== patient.clinic_id) {
+      throw new ForbiddenException('Access denied: Cannot add vitals for other clinics');
+    }
+
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('whiteboard_vitals')
+      .insert({
+        ...createVitalsDto,
+        whiteboard_patient_id: whiteboardPatientId,
+        taken_by_user_id: user.user_id,
+        taken_at: createVitalsDto.taken_at || new Date().toISOString(),
+      })
+      .select(`
+        *,
+        taken_by:users!taken_by_user_id(
+          id,
+          full_name
+        )
+      `)
+      .single();
+
+    if (error) {
+      console.error('Error adding vitals:', error);
+      throw new InternalServerErrorException('Failed to add vitals');
+    }
+
+    await this.logAuditEntry(
+      whiteboardPatientId,
+      'ADD_VITALS',
+      null,
+      data,
+      `Vitals added by ${user.full_name}`,
+      user,
+    );
+
+    return data;
+  }
+
+  /**
+   * Get vitals history for a whiteboard patient
+   * Matches original frontend logic exactly
+   */
+  async getVitalsHistory(whiteboardPatientId: string, user: UserContext): Promise<any[]> {
+    // Verify patient exists and user has access
+    const { data: patient } = await this.supabaseService
+      .getClient()
+      .from('whiteboard_patients')
+      .select('clinic_id')
+      .eq('id', whiteboardPatientId)
+      .single();
+
+    if (!patient) {
+      throw new NotFoundException(`Whiteboard patient with id ${whiteboardPatientId} not found`);
+    }
+
+    // Validate clinic access
+    if (user.role !== 'super_admin' && user.clinic_id !== patient.clinic_id) {
+      throw new ForbiddenException('Access denied: Cannot access vitals for other clinics');
+    }
+
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('whiteboard_vitals')
+      .select(`
+        *,
+        taken_by:users!taken_by_user_id(
+          id,
+          full_name
+        )
+      `)
+      .eq('whiteboard_patient_id', whiteboardPatientId)
+      .order('taken_at', { ascending: false });
+
+    if (error) {
+      console.error('Error getting vitals history:', error);
+      throw new InternalServerErrorException(`Failed to get vitals history: ${error.message}`);
+    }
+
+    return data || [];
+  }
+
+  /**
+   * Get latest vitals for a whiteboard patient
+   * Matches original frontend logic exactly
+   */
+  async getLatestVitals(whiteboardPatientId: string, user: UserContext): Promise<any | null> {
+    // Verify patient exists and user has access
+    const { data: patient } = await this.supabaseService
+      .getClient()
+      .from('whiteboard_patients')
+      .select('clinic_id')
+      .eq('id', whiteboardPatientId)
+      .single();
+
+    if (!patient) {
+      throw new NotFoundException(`Whiteboard patient with id ${whiteboardPatientId} not found`);
+    }
+
+    // Validate clinic access
+    if (user.role !== 'super_admin' && user.clinic_id !== patient.clinic_id) {
+      throw new ForbiddenException('Access denied: Cannot access vitals for other clinics');
+    }
+
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('whiteboard_vitals')
+      .select(`
+        *,
+        taken_by:users!taken_by_user_id(
+          id,
+          full_name
+        )
+      `)
+      .eq('whiteboard_patient_id', whiteboardPatientId)
+      .order('taken_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error getting latest vitals:', error);
+      throw new InternalServerErrorException(`Failed to get latest vitals: ${error.message}`);
+    }
+
+    return data || null;
+  }
+
+  /**
+   * Update vitals for a whiteboard patient
+   * Matches original frontend logic exactly
+   */
+  async updateVitals(
+    vitalsId: string,
+    updateVitalsDto: UpdateVitalsDto,
+    user: UserContext,
+  ): Promise<any> {
+    // Get vitals to check access
+    const { data: vitals, error: vitalsError } = await this.supabaseService
+      .getClient()
+      .from('whiteboard_vitals')
+      .select('whiteboard_patient_id, whiteboard_patients!inner(clinic_id)')
+      .eq('id', vitalsId)
+      .single();
+
+    if (vitalsError || !vitals) {
+      throw new NotFoundException(`Vitals with id ${vitalsId} not found`);
+    }
+
+    // Validate clinic access
+    const patient = Array.isArray(vitals.whiteboard_patients)
+      ? vitals.whiteboard_patients[0]
+      : vitals.whiteboard_patients;
+    if (user.role !== 'super_admin' && user.clinic_id !== patient.clinic_id) {
+      throw new ForbiddenException('Access denied: Cannot update vitals for other clinics');
+    }
+
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('whiteboard_vitals')
+      .update(updateVitalsDto)
+      .eq('id', vitalsId)
+      .select(`
+        *,
+        taken_by:users!taken_by_user_id(
+          id,
+          full_name
+        )
+      `)
+      .single();
+
+    if (error) {
+      console.error('Error updating vitals:', error);
+      throw new InternalServerErrorException(`Failed to update vitals: ${error.message}`);
+    }
+
+    await this.logAuditEntry(
+      vitals.whiteboard_patient_id,
+      'UPDATE_VITALS',
+      vitals,
+      data,
+      `Vitals updated by ${user.full_name}`,
+      user,
+    );
+
+    return data;
   }
 
   /**

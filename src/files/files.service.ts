@@ -38,7 +38,47 @@ export class FilesService {
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    return data;
+    
+    // Add public URLs for each file
+    const filesWithUrls = (data || []).map((file: any) => {
+      let fileUrl = '';
+      if (file.storage_path) {
+        // Extract bucket and path from storage_path
+        // Assuming format: bucket-name/path/to/file
+        const pathParts = file.storage_path.split('/');
+        const bucket = pathParts[0];
+        const path = pathParts.slice(1).join('/');
+
+        const { data: urlData } = this.supabaseService
+          .getClient()
+          .storage
+          .from(bucket)
+          .getPublicUrl(path);
+
+        fileUrl = urlData?.publicUrl || '';
+      }
+
+      // Determine file type from kind or name extension
+      let fileType = file.kind || 'application/octet-stream';
+      if (!file.kind && file.name) {
+        const ext = file.name.split('.').pop()?.toLowerCase();
+        if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext || '')) {
+          fileType = 'image/' + (ext === 'jpg' ? 'jpeg' : ext);
+        } else if (ext === 'pdf') {
+          fileType = 'application/pdf';
+        }
+      }
+
+      return {
+        ...file,
+        url: fileUrl,
+        type: fileType,
+        size: file.file_size || 0,
+        uploaded_at: file.created_at,
+      };
+    });
+
+    return filesWithUrls;
   }
 
   async findByClient(clientId: string) {
@@ -68,7 +108,69 @@ export class FilesService {
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    return data || [];
+    
+    // Add public URLs for each file
+    const filesWithUrls = (data || []).map((file: any) => {
+      let fileUrl = '';
+      if (file.storage_path) {
+        // Extract bucket and path from storage_path
+        const pathParts = file.storage_path.split('/');
+        const bucket = pathParts[0];
+        const path = pathParts.slice(1).join('/');
+
+        const { data: urlData } = this.supabaseService
+          .getClient()
+          .storage
+          .from(bucket)
+          .getPublicUrl(path);
+
+        fileUrl = urlData?.publicUrl || '';
+      }
+
+      // Determine file type from name extension
+      let fileType = 'application/octet-stream';
+      if (file.name) {
+        const ext = file.name.split('.').pop()?.toLowerCase();
+        if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext || '')) {
+          fileType = 'image/' + (ext === 'jpg' ? 'jpeg' : ext);
+        } else if (ext === 'pdf') {
+          fileType = 'application/pdf';
+        }
+      }
+
+      return {
+        ...file,
+        url: fileUrl,
+        type: fileType,
+        size: file.file_size || 0,
+        uploaded_at: file.created_at,
+      };
+    });
+
+    return filesWithUrls;
+  }
+
+  /**
+   * Get public URL for a file from storage
+   */
+  async getFileUrl(storagePath: string): Promise<{ url: string }> {
+    // Extract bucket and path from storage_path
+    // Assuming format: bucket-name/path/to/file
+    const pathParts = storagePath.split('/');
+    if (pathParts.length < 2) {
+      throw new Error('Invalid storage path format');
+    }
+
+    const bucket = pathParts[0];
+    const path = pathParts.slice(1).join('/');
+
+    const { data } = this.supabaseService
+      .getClient()
+      .storage
+      .from(bucket)
+      .getPublicUrl(path);
+
+    return { url: data.publicUrl };
   }
 
   async create(createFileDto: CreateFileDto) {

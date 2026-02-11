@@ -725,4 +725,134 @@ export class TelehealthService {
 
     return newSession;
   }
+
+  /**
+   * Update host_is_active status for a telehealth session by appointment ID
+   */
+  async updateHostActive(appointmentId: string, user: UserContext): Promise<any> {
+    // Find session by appointment ID
+    const { data: telehealthSession, error: findError } = await this.supabaseService
+      .getClient()
+      .from('telehealth_sessions')
+      .select('id')
+      .eq('appointment_id', appointmentId)
+      .single();
+
+    if (findError) {
+      if (findError.code === 'PGRST116') {
+        // No session found - this is okay, just return success
+        return { success: true, message: 'No session found for appointment' };
+      }
+      throw new InternalServerErrorException(`Failed to find session: ${findError.message}`);
+    }
+
+    if (!telehealthSession) {
+      return { success: true, message: 'No session found for appointment' };
+    }
+
+    // Update host_is_active and host_joined_at
+    const { data: updatedSession, error: updateError } = await this.supabaseService
+      .getClient()
+      .from('telehealth_sessions')
+      .update({
+        host_is_active: true,
+        host_joined_at: new Date().toISOString(),
+      })
+      .eq('id', telehealthSession.id)
+      .select()
+      .single();
+
+    if (updateError) {
+      throw new InternalServerErrorException(`Failed to update host status: ${updateError.message}`);
+    }
+
+    return { success: true, session: updatedSession };
+  }
+
+  /**
+   * Create or get an existing telehealth session for a client/pet (without appointment)
+   * Used when clinic staff wants to message a patient directly
+   */
+  async createOrGetSessionForClient(
+    clientId: string,
+    petId: string,
+    user: UserContext
+  ): Promise<any> {
+    // Validate that the client belongs to the user's clinic
+    const { data: client, error: clientError } = await this.supabaseService
+      .getClient()
+      .from('clients')
+      .select('id, clinic_id')
+      .eq('id', clientId)
+      .single();
+
+    if (clientError || !client) {
+      throw new NotFoundException(`Client with id ${clientId} not found`);
+    }
+
+    // Validate clinic access
+    if (user.role !== 'super_admin' && user.clinic_id !== client.clinic_id) {
+      throw new BadRequestException('Access denied: Cannot create session for client from another clinic');
+    }
+
+    // Check for existing active session (not completed or cancelled) without appointment
+    const { data: existingSession, error: findError } = await this.supabaseService
+      .getClient()
+      .from('telehealth_sessions')
+      .select('*')
+      .eq('client_id', clientId)
+      .eq('pet_id', petId)
+      .is('appointment_id', null)
+      .in('status', ['scheduled', 'waiting', 'in_progress'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (findError && findError.code !== 'PGRST116') {
+      throw new InternalServerErrorException(`Failed to check existing session: ${findError.message}`);
+    }
+
+    if (existingSession) {
+      // Update vet_id to current user if different (allows any clinic staff to use the session)
+      if (existingSession.vet_id !== user.user_id) {
+        const { data: updatedSession, error: updateError } = await this.supabaseService
+          .getClient()
+          .from('telehealth_sessions')
+          .update({ vet_id: user.user_id, updated_at: new Date().toISOString() })
+          .eq('id', existingSession.id)
+          .select()
+          .single();
+
+        if (updateError) {
+          throw new InternalServerErrorException(`Failed to update session: ${updateError.message}`);
+        }
+
+        return updatedSession;
+      }
+
+      return existingSession;
+    }
+
+    // No existing session found, create a new one
+    const { data: newSession, error: createError } = await this.supabaseService
+      .getClient()
+      .from('telehealth_sessions')
+      .insert({
+        client_id: clientId,
+        vet_id: user.user_id,
+        pet_id: petId,
+        scheduled_time: new Date().toISOString(),
+        status: 'scheduled',
+        consultation_type: 'chat',
+        // appointment_id is null for direct messaging
+      })
+      .select()
+      .single();
+
+    if (createError) {
+      throw new InternalServerErrorException(`Failed to create session: ${createError.message}`);
+    }
+
+    return newSession;
+  }
 }

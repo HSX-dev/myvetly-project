@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, InternalServerErrorException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, InternalServerErrorException, ForbiddenException, ConflictException, BadRequestException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreateUserDto, UpdateUserDto } from './dto';
 import { UserContext } from '../auth/auth.guard';
@@ -226,10 +226,12 @@ export class UsersService {
       }
     }
 
-    // Handle name fields - construct full_name if not provided
+    // Handle name fields - construct full_name if not provided (matching original Edge Function behavior)
     const updateData = { ...createUserDto };
     if (!updateData.full_name && (updateData.first_name || updateData.last_name)) {
-      updateData.full_name = `${updateData.first_name || ''} ${updateData.last_name || ''}`.trim();
+      // Match original Edge Function: [first_name, last_name].filter(Boolean).join(' ').trim()
+      const nameParts = [updateData.first_name, updateData.last_name].filter(Boolean);
+      updateData.full_name = nameParts.length > 0 ? nameParts.join(' ').trim() : undefined;
     } else if (updateData.full_name && (!updateData.first_name || !updateData.last_name)) {
       // Split full_name if first_name/last_name not provided
       const nameParts = updateData.full_name.trim().split(' ');
@@ -263,9 +265,42 @@ export class UsersService {
 
       if (authError) {
         // Check if error is due to user already existing
-        if (authError.message?.includes('already registered') || 
-            authError.message?.includes('already exists') ||
-            authError.message?.includes('User already registered')) {
+        const errorMessage = authError.message?.toLowerCase() || '';
+        const isDuplicateEmail = 
+          errorMessage.includes('already registered') || 
+          errorMessage.includes('already exists') ||
+          errorMessage.includes('user already registered') ||
+          errorMessage.includes('email address has already been registered') ||
+          errorMessage.includes('duplicate') ||
+          authError.status === 422; // Supabase returns 422 for duplicate emails
+
+        if (isDuplicateEmail) {
+          // Check if user already exists in users table
+          const { data: existingUserRecord } = await this.supabaseService
+            .getClient()
+            .from('users')
+            .select('id, email, role, status, clinic_id, organization_id, auth_user_id')
+            .eq('email', createUserDto.email)
+            .neq('role', 'client') // Exclude clients
+            .maybeSingle();
+
+          if (existingUserRecord) {
+            // Check if user is complete and active (matching original frontend logic)
+            const isCompleteActiveUser = 
+              existingUserRecord.role && 
+              existingUserRecord.clinic_id && 
+              existingUserRecord.status === 'active' && 
+              existingUserRecord.auth_user_id;
+            
+            if (isCompleteActiveUser) {
+              // User already exists and is complete/active - return 409 Conflict
+              throw new ConflictException(
+                `A user with email ${createUserDto.email} already exists in the system`,
+              );
+            }
+            // If user is incomplete or inactive, continue to update it
+          }
+
           // User already exists, try to get their ID by attempting to invite them
           // This will return the existing user
           const { data: existingUserData, error: inviteError } = await this.supabaseService
@@ -287,8 +322,9 @@ export class UsersService {
               alreadyExisted = true;
               console.log('Auth user already exists:', authUserId);
             } else {
-              throw new InternalServerErrorException(
-                `User with email ${createUserDto.email} may already exist, but could not retrieve user ID`,
+              // If we can't find the user but they exist, return 409 Conflict
+              throw new ConflictException(
+                `A user with email ${createUserDto.email} already exists`,
               );
             }
           } else {
@@ -297,9 +333,18 @@ export class UsersService {
             console.log('Auth user already exists:', authUserId);
           }
         } else {
-          throw new InternalServerErrorException(
-            `Failed to create auth user: ${authError.message}`,
-          );
+          // For other auth errors, check if they're client errors (4xx) or server errors (5xx)
+          // Invalid email format, missing required fields, etc. should be 400 Bad Request
+          if (authError.status && authError.status >= 400 && authError.status < 500) {
+            throw new BadRequestException(
+              `Failed to create auth user: ${authError.message}`,
+            );
+          } else {
+            // Only throw 500 for actual server errors
+            throw new InternalServerErrorException(
+              `Failed to create auth user: ${authError.message}`,
+            );
+          }
         }
       } else {
         // User created successfully
@@ -331,9 +376,21 @@ export class UsersService {
       }
     } catch (error: any) {
       console.error('Error creating auth user:', error);
-      if (error instanceof InternalServerErrorException) {
+      // Preserve HTTP exceptions (4xx, 5xx) - don't convert them
+      if (error instanceof ConflictException || 
+          error instanceof BadRequestException || 
+          error instanceof ForbiddenException ||
+          error instanceof NotFoundException ||
+          error instanceof InternalServerErrorException) {
         throw error;
       }
+      // For unknown errors, check if they're client errors based on status code
+      if (error?.status && error.status >= 400 && error.status < 500) {
+        throw new BadRequestException(
+          `Failed to create auth user: ${error.message || 'Unknown error'}`,
+        );
+      }
+      // Only throw 500 for actual server errors
       throw new InternalServerErrorException(
         `Failed to create auth user: ${error.message || 'Unknown error'}`,
       );
@@ -356,6 +413,7 @@ export class UsersService {
         organization_id,
         clinic_id,
         status,
+        timezone,
         created_at,
         has_set_password,
         organizations!users_organization_id_fkey(id, name),
@@ -365,10 +423,127 @@ export class UsersService {
       .single();
 
     if (existingUserRecord) {
-      // User record already exists, return it
+      // User record already exists
       console.log('User record already exists:', existingUserRecord.id);
+      
+      // Check if user is complete and active (matching original frontend logic)
+      // If user is complete/active, return 409 Conflict instead of updating
+      const isCompleteActiveUser = 
+        existingUserRecord.role && 
+        existingUserRecord.clinic_id && 
+        existingUserRecord.status === 'active' && 
+        existingUserRecord.auth_user_id;
+      
+      if (isCompleteActiveUser) {
+        // User already exists and is complete/active - return 409 Conflict
+        throw new ConflictException(
+          `A user with email ${createUserDto.email} already exists in the system`,
+        );
+      }
+      
+      // User exists but is incomplete or inactive - update it
+      // Update name fields if provided in request and they differ from existing record
+      const needsUpdate: any = {};
+      if (updateData.first_name && updateData.first_name !== existingUserRecord.first_name) {
+        needsUpdate.first_name = updateData.first_name;
+      }
+      if (updateData.last_name && updateData.last_name !== existingUserRecord.last_name) {
+        needsUpdate.last_name = updateData.last_name;
+      }
+      
+      // Reconstruct full_name from first_name and last_name (matching original Edge Function behavior)
+      const finalFirstName = needsUpdate.first_name || existingUserRecord.first_name || updateData.first_name;
+      const finalLastName = needsUpdate.last_name || existingUserRecord.last_name || updateData.last_name;
+      const nameParts = [finalFirstName, finalLastName].filter(Boolean);
+      const constructedFullName = nameParts.length > 0 ? nameParts.join(' ').trim() : undefined;
+      
+      if (constructedFullName && constructedFullName !== existingUserRecord.full_name) {
+        needsUpdate.full_name = constructedFullName;
+      }
+      
+      // Update timezone if provided and different
+      if (updateData.timezone && updateData.timezone !== existingUserRecord.timezone) {
+        needsUpdate.timezone = updateData.timezone;
+      }
+      
+      // Update role_id and role_name if provided
+      if (updateData.role_id !== undefined && updateData.role_id !== existingUserRecord.role_id) {
+        needsUpdate.role_id = updateData.role_id;
+      }
+      if (updateData.role_name !== undefined && updateData.role_name !== existingUserRecord.role_name) {
+        needsUpdate.role_name = updateData.role_name;
+      }
+      
+      // Update clinic_id and organization_id if provided and different (important for user to show in list)
+      if (updateData.clinic_id !== undefined && updateData.clinic_id !== existingUserRecord.clinic_id) {
+        needsUpdate.clinic_id = updateData.clinic_id;
+      }
+      if (updateData.organization_id !== undefined && updateData.organization_id !== existingUserRecord.organization_id) {
+        needsUpdate.organization_id = updateData.organization_id;
+      }
+      
+      // Update role if provided and different
+      if (updateData.role && updateData.role !== existingUserRecord.role) {
+        needsUpdate.role = updateData.role;
+      }
+      
+      // Update status if provided and different
+      if (updateData.status && updateData.status !== existingUserRecord.status) {
+        needsUpdate.status = updateData.status;
+      }
+      
+      // Always update auth_user_id if it's missing or different
+      if (!existingUserRecord.auth_user_id || existingUserRecord.auth_user_id !== authUserId) {
+        needsUpdate.auth_user_id = authUserId;
+      }
+      
+      // Update the record if there are changes
+      if (Object.keys(needsUpdate).length > 0) {
+        const { data: updatedRecord, error: updateError } = await this.supabaseService
+          .getClient()
+          .from('users')
+          .update(needsUpdate)
+          .eq('id', existingUserRecord.id)
+          .select(`
+            id,
+            auth_user_id,
+            email,
+            full_name,
+            first_name,
+            last_name,
+            role,
+            role_id,
+            role_name,
+            organization_id,
+            clinic_id,
+            status,
+            created_at,
+            has_set_password,
+            organizations!users_organization_id_fkey(id, name),
+            clinics!users_clinic_id_fkey(id, name)
+          `)
+          .single();
+        
+        if (updateError) {
+          console.warn('Failed to update existing user record:', updateError);
+          throw new InternalServerErrorException(
+            `Failed to update existing user record: ${updateError.message}`,
+          );
+        } else if (updatedRecord) {
+          return {
+            ...updatedRecord,
+            already_existed: true,
+            auth_user_id: authUserId,
+          };
+        }
+      }
+      
+      // Return existing record with corrected full_name in response if it was wrong
+      const responseFullName = constructedFullName || existingUserRecord.full_name;
+      
       return {
         ...existingUserRecord,
+        full_name: responseFullName,
         already_existed: true,
         auth_user_id: authUserId,
       };
@@ -411,6 +586,13 @@ export class UsersService {
 
     if (error) {
       console.error('Error creating user record:', error);
+      
+      // Check if error is due to duplicate email
+      if (error.code === '23505' && (error.message?.includes('email') || error.message?.includes('users_email_key'))) {
+        throw new ConflictException(
+          `A user with email ${createUserDto.email} already exists in the system`,
+        );
+      }
       
       // Check if error is due to duplicate key (race condition)
       if (error.code === '23505' && error.message?.includes('auth_user_id')) {
@@ -751,6 +933,133 @@ export class UsersService {
     return { success: true };
   }
 
+  /**
+   * Get all states
+   */
+  async getStates() {
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('states')
+      .select('id, code, name')
+      .order('name');
+
+    if (error) {
+      throw new InternalServerErrorException(`Failed to fetch states: ${error.message}`);
+    }
+
+    return data || [];
+  }
+
+  /**
+   * Get licensed states for a user
+   */
+  async getUserLicensedStates(userId: string, user: UserContext) {
+    // Validate access - users can only see their own licensed states, or admins can see any
+    if (user.role !== 'super_admin' && user.user_id !== userId) {
+      // Check if user is in same organization/clinic
+      const { data: targetUser } = await this.supabaseService
+        .getClient()
+        .from('users')
+        .select('organization_id, clinic_id')
+        .eq('id', userId)
+        .single();
+
+      if (!targetUser) {
+        throw new NotFoundException(`User with id ${userId} not found`);
+      }
+
+      if (user.role === 'org_admin') {
+        if (targetUser.organization_id !== user.organization_id) {
+          throw new ForbiddenException('Access denied');
+        }
+      } else if (user.clinic_id !== targetUser.clinic_id || user.organization_id !== targetUser.organization_id) {
+        throw new ForbiddenException('Access denied');
+      }
+    }
+
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('user_licensed_states')
+      .select(`
+        id,
+        user_id,
+        state_id,
+        state_code,
+        created_at,
+        state:states(id, code, name)
+      `)
+      .eq('user_id', userId)
+      .order('created_at');
+
+    if (error) {
+      throw new InternalServerErrorException(`Failed to fetch licensed states: ${error.message}`);
+    }
+
+    // Add state_code with fallback to state.code
+    return (data || []).map((item: any) => ({
+      ...item,
+      state_code: item.state_code || item.state?.code || null,
+    }));
+  }
+
+  /**
+   * Update licensed states for a user (replaces all existing states)
+   */
+  async updateUserLicensedStates(userId: string, stateIds: string[], user: UserContext) {
+    // Validate access - users can only update their own licensed states, or admins can update any
+    if (user.role !== 'super_admin' && user.user_id !== userId) {
+      // Check if user is in same organization/clinic
+      const { data: targetUser } = await this.supabaseService
+        .getClient()
+        .from('users')
+        .select('organization_id, clinic_id')
+        .eq('id', userId)
+        .single();
+
+      if (!targetUser) {
+        throw new NotFoundException(`User with id ${userId} not found`);
+      }
+
+      if (user.role === 'org_admin') {
+        if (targetUser.organization_id !== user.organization_id) {
+          throw new ForbiddenException('Access denied');
+        }
+      } else if (user.clinic_id !== targetUser.clinic_id || user.organization_id !== targetUser.organization_id) {
+        throw new ForbiddenException('Access denied');
+      }
+    }
+
+    // Delete all existing licensed states for the user
+    const { error: deleteError } = await this.supabaseService
+      .getClient()
+      .from('user_licensed_states')
+      .delete()
+      .eq('user_id', userId);
+
+    if (deleteError) {
+      throw new InternalServerErrorException(`Failed to delete existing licensed states: ${deleteError.message}`);
+    }
+
+    // Insert new licensed states if any
+    if (stateIds.length > 0) {
+      const newStates = stateIds.map(stateId => ({
+        user_id: userId,
+        state_id: stateId,
+      }));
+
+      const { error: insertError } = await this.supabaseService
+        .getClient()
+        .from('user_licensed_states')
+        .insert(newStates);
+
+      if (insertError) {
+        throw new InternalServerErrorException(`Failed to insert licensed states: ${insertError.message}`);
+      }
+    }
+
+    return { success: true };
+  }
+
   async getCurrentUserProfile(user: any) {
     if (!user || !user.user_id) {
       throw new NotFoundException('User not found');
@@ -1011,7 +1320,7 @@ export class UsersService {
     if (!data) return [];
 
     // Filter to include veterinarians, staff, and custom roles like "Televet"
-    const veterinarianRoles = ['veterinarian', 'staff'];
+    const veterinarianRoles = ['veterinarian', 'staff', 'televet'];
     const filtered = data.filter((userData: any) => {
       const baseRole = userData.role?.toLowerCase();
       const roleName = userData.role_name?.toLowerCase();

@@ -5,3 +5,7 @@ export class SendConfirmationEmailDto {
   appointment_id: string;
 }
 
+
+
+
+

@@ -38,5 +38,10 @@ export class FilesController {
   remove(@Param('id') id: string) {
     return this.filesService.remove(id);
   }
+
+  @Get('url/:storagePath')
+  getFileUrl(@Param('storagePath') storagePath: string) {
+    return this.filesService.getFileUrl(storagePath);
+  }
 }
 

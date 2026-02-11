@@ -1,10 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { UserContext } from '../auth/auth.guard';
+import { AiService } from '../ai/ai.service';
 
 @Injectable()
 export class SoapService {
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(
+    private supabaseService: SupabaseService,
+    private aiService: AiService,
+  ) {}
 
   async getSOAPAudit(petId: string, user: UserContext) {
     // Validate user has access to this pet's clinic
@@ -640,6 +644,1083 @@ export class SoapService {
       vitals: vitalsWithSupervisors,
       physical: physicalWithSupervisors
     };
+  }
+
+  async getBodyMapById(id: string, user: UserContext) {
+    // Get body map
+    const { data: bodyMap, error: bodyMapError } = await this.supabaseService
+      .getClient()
+      .from('soap_body_maps')
+      .select('*, soap_notes!soap_note_id(appointment_id, pet_id)')
+      .eq('id', id)
+      .single();
+
+    if (bodyMapError || !bodyMap) {
+      if (bodyMapError?.code === 'PGRST116') {
+        return null; // No rows found
+      }
+      throw new Error(`Body map with id ${id} not found`);
+    }
+
+    // Get appointment to check clinic access
+    const appointmentId = (bodyMap.soap_notes as any)?.appointment_id;
+    if (!appointmentId) {
+      throw new Error(`Appointment not found for body map ${id}`);
+    }
+
+    const { data: appointment, error: appointmentError } = await this.supabaseService
+      .getClient()
+      .from('appointments')
+      .select('tenant_id')
+      .eq('id', appointmentId)
+      .single();
+
+    if (appointmentError || !appointment) {
+      throw new Error(`Appointment not found for body map ${id}`);
+    }
+
+    // Validate clinic access
+    if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
+      throw new Error('Access denied: You do not have access to this body map');
+    }
+
+    // Remove nested soap_notes from response
+    const { soap_notes, ...bodyMapData } = bodyMap;
+    return bodyMapData;
+  }
+
+  async createBodyMap(data: any, user: UserContext) {
+    // Validate SOAP note access
+    const { data: soapNote, error: soapError } = await this.supabaseService
+      .getClient()
+      .from('soap_notes')
+      .select('id, appointment_id')
+      .eq('id', data.soap_note_id)
+      .single();
+
+    if (soapError || !soapNote) {
+      throw new Error(`SOAP note with id ${data.soap_note_id} not found`);
+    }
+
+    // Get appointment to check clinic access
+    const { data: appointment, error: appointmentError } = await this.supabaseService
+      .getClient()
+      .from('appointments')
+      .select('tenant_id')
+      .eq('id', soapNote.appointment_id)
+      .single();
+
+    if (appointmentError || !appointment) {
+      throw new Error(`Appointment not found for SOAP note ${data.soap_note_id}`);
+    }
+
+    // Validate clinic access
+    if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
+      throw new Error('Access denied: You do not have access to this SOAP note');
+    }
+
+    // Create body map
+    const { data: bodyMap, error } = await this.supabaseService
+      .getClient()
+      .from('soap_body_maps')
+      .insert(data)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to create body map: ${error.message || 'Unknown error'}`);
+    }
+
+    return bodyMap;
+  }
+
+  async updateBodyMap(id: string, data: any, user: UserContext) {
+    // First get the body map to validate access
+    const bodyMap = await this.getBodyMapById(id, user);
+    if (!bodyMap) {
+      throw new Error(`Body map with id ${id} not found`);
+    }
+
+    // Update body map
+    const { data: updatedBodyMap, error } = await this.supabaseService
+      .getClient()
+      .from('soap_body_maps')
+      .update(data)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to update body map: ${error.message || 'Unknown error'}`);
+    }
+
+    return updatedBodyMap;
+  }
+
+  async deleteBodyMap(id: string, user: UserContext) {
+    // First get the body map to validate access and get thumbnail URL
+    const bodyMap = await this.getBodyMapById(id, user);
+    if (!bodyMap) {
+      throw new Error(`Body map with id ${id} not found`);
+    }
+
+    // Delete body map
+    const { error } = await this.supabaseService
+      .getClient()
+      .from('soap_body_maps')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      throw new Error(`Failed to delete body map: ${error.message || 'Unknown error'}`);
+    }
+
+    // Return thumbnail URL and soap_note_id so frontend can delete it from storage
+    return {
+      success: true,
+      thumbnail_url: (bodyMap as any).thumbnail_url,
+      soap_note_id: (bodyMap as any).soap_note_id,
+    };
+  }
+
+  async expandSOAP(
+    soapNoteId: string,
+    section: 'subjective' | 'objective' | 'assessment' | 'plan' | 'all' | undefined,
+    currentData: any,
+    user: UserContext,
+  ): Promise<any> {
+    // First, get the SOAP note to validate access
+    const { data: soapNote, error: soapError } = await this.supabaseService
+      .getClient()
+      .from('soap_notes')
+      .select('id, appointment_id, pet_id')
+      .eq('id', soapNoteId)
+      .single();
+
+    if (soapError || !soapNote) {
+      throw new Error(`SOAP note with id ${soapNoteId} not found`);
+    }
+
+    // Get appointment to check clinic access
+    const { data: appointment, error: appointmentError } = await this.supabaseService
+      .getClient()
+      .from('appointments')
+      .select('id, tenant_id')
+      .eq('id', soapNote.appointment_id)
+      .single();
+
+    if (appointmentError || !appointment) {
+      throw new Error(`Appointment not found for SOAP note ${soapNoteId}`);
+    }
+
+    // Validate clinic access
+    if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
+      throw new Error('Access denied: You do not have access to this SOAP note');
+    }
+
+    const result = await this.aiService.expandSoap(
+      {
+        appointment_id: appointment.id,
+        section,
+        current_data: currentData,
+      },
+      user.auth_user_id,
+    );
+
+    // Update the SOAP note with the expanded content
+    await this.supabaseService
+      .getClient()
+      .from('soap_notes')
+      .update(result.expanded)
+      .eq('id', soapNoteId);
+
+    // Update snapshot to include soap_notes_id for easier querying
+    if (result.snapshot_id) {
+      await this.supabaseService
+        .getClient()
+        .from('soap_snapshots')
+        .update({ soap_notes_id: soapNoteId })
+        .eq('id', result.snapshot_id);
+    }
+
+    return {
+      version_id: result.snapshot_id,
+      updated_at: new Date().toISOString(),
+    };
+  }
+
+  async undoSOAPExpand(soapNoteId: string, user: UserContext): Promise<any> {
+    // First, get the SOAP note to validate access
+    const { data: soapNote, error: soapError } = await this.supabaseService
+      .getClient()
+      .from('soap_notes')
+      .select('id, appointment_id, pet_id')
+      .eq('id', soapNoteId)
+      .single();
+
+    if (soapError || !soapNote) {
+      throw new Error(`SOAP note with id ${soapNoteId} not found`);
+    }
+
+    // Get appointment to check clinic access
+    const { data: appointment, error: appointmentError } = await this.supabaseService
+      .getClient()
+      .from('appointments')
+      .select('id, tenant_id')
+      .eq('id', soapNote.appointment_id)
+      .single();
+
+    if (appointmentError || !appointment) {
+      throw new Error(`Appointment not found for SOAP note ${soapNoteId}`);
+    }
+
+    // Validate clinic access
+    if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
+      throw new Error('Access denied: You do not have access to this SOAP note');
+    }
+
+    // Get current SOAP note data to save as snapshot before reverting
+    const { data: currentSoapData } = await this.supabaseService
+      .getClient()
+      .from('soap_notes')
+      .select('subjective, objective, assessment, plan')
+      .eq('id', soapNoteId)
+      .single();
+
+    // Find the latest snapshot for this SOAP note
+    const { data: latestSnapshot, error: snapshotError } = await this.supabaseService
+      .getClient()
+      .from('soap_snapshots')
+      .select('*')
+      .eq('soap_notes_id', soapNoteId)
+      .is('undone_at', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (snapshotError || !latestSnapshot) {
+      throw new Error('No active AI expansion found to undo.');
+    }
+
+    // Revert SOAP note to snapshot data
+    const { error: updateError } = await this.supabaseService
+      .getClient()
+      .from('soap_notes')
+      .update(latestSnapshot.snapshot_data)
+      .eq('id', soapNoteId);
+
+    if (updateError) {
+      throw new Error(`Failed to revert SOAP note: ${updateError.message}`);
+    }
+
+    // Mark snapshot as undone
+    await this.supabaseService
+      .getClient()
+      .from('soap_snapshots')
+      .update({ undone_at: new Date().toISOString() })
+      .eq('id', latestSnapshot.id);
+
+    return {
+      reverted_version_id: latestSnapshot.id,
+      updated_at: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Get public URL for base body map image
+   */
+  async getBaseImageUrl(species: string, user: UserContext): Promise<{ url: string }> {
+    const filePath = `base-images/${species}.png`;
+    const supabase = this.supabaseService.getClient();
+    
+    const { data: { publicUrl } } = supabase.storage
+      .from('body-maps')
+      .getPublicUrl(filePath);
+    
+    return { url: publicUrl };
+  }
+
+  /**
+   * Get signed URL for base body map image
+   */
+  async getSignedBaseImageUrl(
+    species: string,
+    user: UserContext,
+    expiresIn: number = 3600,
+  ): Promise<{ url: string }> {
+    const filePath = `base-images/${species}.png`;
+    const supabase = this.supabaseService.getClient();
+    
+    const { data, error } = await supabase.storage
+      .from('body-maps')
+      .createSignedUrl(filePath, expiresIn);
+    
+    if (error) {
+      throw new Error(`Failed to create signed URL: ${error.message}`);
+    }
+    
+    return { url: data.signedUrl };
+  }
+
+  /**
+   * List files in storage folder
+   */
+  async listStorageFiles(folder: string, user: UserContext): Promise<any[]> {
+    const supabase = this.supabaseService.getClient();
+    
+    const { data, error } = await supabase.storage
+      .from('body-maps')
+      .list(folder);
+    
+    if (error) {
+      throw new Error(`Failed to list files: ${error.message}`);
+    }
+    
+    return data || [];
+  }
+
+  /**
+   * Verify if base image exists for a species
+   */
+  async verifyImageExists(species: string, user: UserContext): Promise<{ exists: boolean }> {
+    try {
+      const supabase = this.supabaseService.getClient();
+      
+      const { data, error } = await supabase.storage
+        .from('body-maps')
+        .list('base-images', {
+          search: `${species}.png`,
+        });
+      
+      if (error) {
+        // Listing may not be allowed by policies - assume it exists
+        return { exists: true };
+      }
+      
+      const exists = (data || []).some(
+        (file) => file.name.toLowerCase() === `${species}.png`.toLowerCase(),
+      );
+      
+      return { exists };
+    } catch (error) {
+      // Don't fail completely - assume it might exist
+      return { exists: true };
+    }
+  }
+
+  /**
+   * Get public URL for discharge instructions file
+   */
+  async getDischargeInstructionsPublicUrl(
+    filePath: string,
+    user: UserContext,
+  ): Promise<{ url: string }> {
+    const supabase = this.supabaseService.getClient();
+    
+    const { data: { publicUrl } } = supabase.storage
+      .from('discharge-instructions')
+      .getPublicUrl(filePath);
+    
+    return { url: publicUrl };
+  }
+
+  /**
+   * Upload discharge instructions file to storage
+   */
+  async uploadDischargeInstructionsFile(
+    appointmentId: string,
+    filePath: string,
+    fileData: string, // base64 encoded file data
+    contentType: string,
+    user: UserContext,
+  ): Promise<{ url: string }> {
+    // Validate appointment access
+    const { data: appointment, error: appointmentError } = await this.supabaseService
+      .getClient()
+      .from('appointments')
+      .select('tenant_id')
+      .eq('id', appointmentId)
+      .single();
+
+    if (appointmentError || !appointment) {
+      throw new Error(`Appointment with id ${appointmentId} not found`);
+    }
+
+    // Validate clinic access
+    if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
+      throw new Error('Access denied: You do not have access to this appointment');
+    }
+
+    const supabase = this.supabaseService.getClient();
+
+    // Convert base64 to buffer
+    const base64Data = fileData.replace(/^data:[^;]+;base64,/, '');
+    const buffer = Buffer.from(base64Data, 'base64');
+
+    // Upload to storage
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('discharge-instructions')
+      .upload(filePath, buffer, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: contentType,
+      });
+
+    if (uploadError) {
+      if (uploadError.message.includes('not found') || uploadError.message.includes('Bucket')) {
+        throw new Error('Bucket "discharge-instructions" does not exist. Please create it in Supabase Storage and ensure it is public.');
+      }
+      if (uploadError.message.includes('row-level security') || uploadError.message.includes('permission')) {
+        throw new Error(`Permission denied: ${uploadError.message}. Please check storage RLS policies.`);
+      }
+      throw new Error(`Failed to upload file: ${uploadError.message}`);
+    }
+
+    // Get public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('discharge-instructions')
+      .getPublicUrl(filePath);
+
+    return { url: publicUrl };
+  }
+
+  /**
+   * Upload body map thumbnail to storage
+   */
+  async uploadBodyMapThumbnail(
+    soapNoteId: string,
+    bodyMapId: string,
+    fileData: string, // base64 encoded file data
+    user: UserContext,
+  ): Promise<{ url: string }> {
+    // Validate SOAP note access
+    const { data: soapNote, error: soapError } = await this.supabaseService
+      .getClient()
+      .from('soap_notes')
+      .select('id, appointment_id')
+      .eq('id', soapNoteId)
+      .single();
+
+    if (soapError || !soapNote) {
+      throw new Error(`SOAP note with id ${soapNoteId} not found`);
+    }
+
+    // Get appointment to check clinic access
+    const { data: appointment, error: appointmentError } = await this.supabaseService
+      .getClient()
+      .from('appointments')
+      .select('tenant_id')
+      .eq('id', soapNote.appointment_id)
+      .single();
+
+    if (appointmentError || !appointment) {
+      throw new Error(`Appointment not found for SOAP note ${soapNoteId}`);
+    }
+
+    // Validate clinic access
+    if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
+      throw new Error('Access denied: You do not have access to this SOAP note');
+    }
+
+    const supabase = this.supabaseService.getClient();
+    const fileName = `${bodyMapId}.png`;
+    const filePath = `annotations/${soapNoteId}/${fileName}`;
+
+    // Convert base64 to buffer
+    const base64Data = fileData.replace(/^data:image\/\w+;base64,/, '');
+    const buffer = Buffer.from(base64Data, 'base64');
+
+    // Upload to storage
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('body-maps')
+      .upload(filePath, buffer, {
+        cacheControl: '3600',
+        upsert: true,
+        contentType: 'image/png',
+      });
+
+    if (uploadError) {
+      if (uploadError.message.includes('not found') || uploadError.message.includes('Bucket')) {
+        throw new Error('Bucket "body-maps" does not exist. Please create it in Supabase Storage and ensure it is public.');
+      }
+      if (uploadError.message.includes('row-level security') || uploadError.message.includes('permission')) {
+        throw new Error(`Permission denied: ${uploadError.message}. Please check storage RLS policies for the annotations folder.`);
+      }
+      throw new Error(`Failed to upload thumbnail: ${uploadError.message}`);
+    }
+
+    // Get public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('body-maps')
+      .getPublicUrl(filePath);
+
+    return { url: publicUrl };
+  }
+
+  /**
+   * Remove body map thumbnail from storage
+   */
+  async removeBodyMapThumbnail(
+    filePath: string,
+    user: UserContext,
+  ): Promise<{ success: boolean }> {
+    // Extract soap_note_id from file path to validate access
+    const pathMatch = filePath.match(/annotations\/([^/]+)\//);
+    if (!pathMatch || !pathMatch[1]) {
+      throw new Error('Invalid file path format');
+    }
+
+    const soapNoteId = pathMatch[1];
+
+    // Validate SOAP note access
+    const { data: soapNote, error: soapError } = await this.supabaseService
+      .getClient()
+      .from('soap_notes')
+      .select('id, appointment_id')
+      .eq('id', soapNoteId)
+      .single();
+
+    if (soapError || !soapNote) {
+      throw new Error(`SOAP note with id ${soapNoteId} not found`);
+    }
+
+    // Get appointment to check clinic access
+    const { data: appointment, error: appointmentError } = await this.supabaseService
+      .getClient()
+      .from('appointments')
+      .select('tenant_id')
+      .eq('id', soapNote.appointment_id)
+      .single();
+
+    if (appointmentError || !appointment) {
+      throw new Error(`Appointment not found for SOAP note ${soapNoteId}`);
+    }
+
+    // Validate clinic access
+    if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
+      throw new Error('Access denied: You do not have access to this SOAP note');
+    }
+
+    const supabase = this.supabaseService.getClient();
+    const { error } = await supabase.storage
+      .from('body-maps')
+      .remove([filePath]);
+
+    if (error) {
+      throw new Error(`Failed to remove thumbnail: ${error.message}`);
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * Create SOAP vitals
+   */
+  async createSoapVitals(data: any, soapNoteId: string, user: UserContext): Promise<any> {
+    // First, validate access to the SOAP note
+    const { data: soapNote, error: soapError } = await this.supabaseService
+      .getClient()
+      .from('soap_notes')
+      .select('id, appointment_id, pet_id')
+      .eq('id', soapNoteId)
+      .single();
+
+    if (soapError || !soapNote) {
+      throw new Error(`SOAP note with id ${soapNoteId} not found`);
+    }
+
+    // Get appointment to check clinic access
+    const { data: appointment, error: appointmentError } = await this.supabaseService
+      .getClient()
+      .from('appointments')
+      .select('tenant_id')
+      .eq('id', soapNote.appointment_id)
+      .single();
+
+    if (appointmentError || !appointment) {
+      throw new Error(`Appointment not found for SOAP note ${soapNoteId}`);
+    }
+
+    // Validate clinic access
+    if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
+      throw new Error('Access denied: You do not have access to this SOAP note');
+    }
+
+    // Create vitals
+    const { data: soapVitals, error } = await this.supabaseService
+      .getClient()
+      .from('soap_vitals')
+      .insert({
+        ...data,
+        soap_notes_id: soapNoteId
+      })
+      .select(`
+        id,
+        created_at,
+        soap_notes_id,
+        supervising_user,
+        weight,
+        temperature,
+        heart_rate,
+        respiratory_rate,
+        blood_pressure,
+        supervisor:users!supervising_user(id, full_name)
+      `)
+      .single();
+
+    if (error) throw error;
+    return soapVitals;
+  }
+
+  /**
+   * Update SOAP vitals
+   */
+  async updateSoapVitals(id: string, data: any, user: UserContext): Promise<any> {
+    // First, get the vitals to validate access
+    const { data: vitals, error: vitalsError } = await this.supabaseService
+      .getClient()
+      .from('soap_vitals')
+      .select('soap_notes_id')
+      .eq('id', id)
+      .single();
+
+    if (vitalsError || !vitals) {
+      throw new Error(`SOAP vitals with id ${id} not found`);
+    }
+
+    // Get SOAP note to get appointment_id
+    const { data: soapNote, error: soapError } = await this.supabaseService
+      .getClient()
+      .from('soap_notes')
+      .select('appointment_id')
+      .eq('id', vitals.soap_notes_id)
+      .single();
+
+    if (soapError || !soapNote) {
+      throw new Error(`SOAP note not found for vitals ${id}`);
+    }
+
+    // Get appointment to validate clinic access
+    const { data: appointment, error: appointmentError } = await this.supabaseService
+      .getClient()
+      .from('appointments')
+      .select('tenant_id')
+      .eq('id', soapNote.appointment_id)
+      .single();
+
+    if (appointmentError || !appointment) {
+      throw new Error(`Appointment not found for SOAP note`);
+    }
+
+    // Validate clinic access
+    if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
+      throw new Error('Access denied: You do not have access to this SOAP vitals');
+    }
+
+    // Update vitals
+    const { data: updatedVitals, error } = await this.supabaseService
+      .getClient()
+      .from('soap_vitals')
+      .update(data)
+      .eq('id', id)
+      .select(`
+        id,
+        created_at,
+        soap_notes_id,
+        supervising_user,
+        weight,
+        temperature,
+        heart_rate,
+        respiratory_rate,
+        blood_pressure,
+        supervisor:users!supervising_user(id, full_name)
+      `)
+      .single();
+
+    if (error) throw error;
+    return updatedVitals;
+  }
+
+  /**
+   * Create SOAP physical exam
+   */
+  async createSoapPhysicalExam(data: any, soapNoteId: string, user: UserContext): Promise<any> {
+    // First, validate access to the SOAP note
+    const { data: soapNote, error: soapError } = await this.supabaseService
+      .getClient()
+      .from('soap_notes')
+      .select('id, appointment_id, pet_id')
+      .eq('id', soapNoteId)
+      .single();
+
+    if (soapError || !soapNote) {
+      throw new Error(`SOAP note with id ${soapNoteId} not found`);
+    }
+
+    // Get appointment to check clinic access
+    const { data: appointment, error: appointmentError } = await this.supabaseService
+      .getClient()
+      .from('appointments')
+      .select('tenant_id')
+      .eq('id', soapNote.appointment_id)
+      .single();
+
+    if (appointmentError || !appointment) {
+      throw new Error(`Appointment not found for SOAP note ${soapNoteId}`);
+    }
+
+    // Validate clinic access
+    if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
+      throw new Error('Access denied: You do not have access to this SOAP note');
+    }
+
+    // Create physical exam
+    const { data: soapPhysical, error } = await this.supabaseService
+      .getClient()
+      .from('soap_physical')
+      .insert({
+        soap_notes_id: soapNoteId,
+        supervising_user: data.supervising_user,
+        exam: data,
+      })
+      .select(`
+        id,
+        created_at,
+        soap_notes_id,
+        supervising_user,
+        title,
+        template,
+        exam,
+        supervisor:users!supervising_user(id, full_name)
+      `)
+      .single();
+
+    if (error) throw error;
+    return soapPhysical;
+  }
+
+  /**
+   * Update SOAP physical exam
+   */
+  async updateSoapPhysicalExam(id: string, data: any, user: UserContext): Promise<any> {
+    // First, get the physical exam to validate access
+    const { data: physical, error: physicalError } = await this.supabaseService
+      .getClient()
+      .from('soap_physical')
+      .select('soap_notes_id')
+      .eq('id', id)
+      .single();
+
+    if (physicalError || !physical) {
+      throw new Error(`SOAP physical exam with id ${id} not found`);
+    }
+
+    // Get SOAP note to get appointment_id
+    const { data: soapNote, error: soapError } = await this.supabaseService
+      .getClient()
+      .from('soap_notes')
+      .select('appointment_id')
+      .eq('id', physical.soap_notes_id)
+      .single();
+
+    if (soapError || !soapNote) {
+      throw new Error(`SOAP note not found for physical exam ${id}`);
+    }
+
+    // Get appointment to validate clinic access
+    const { data: appointment, error: appointmentError } = await this.supabaseService
+      .getClient()
+      .from('appointments')
+      .select('tenant_id')
+      .eq('id', soapNote.appointment_id)
+      .single();
+
+    if (appointmentError || !appointment) {
+      throw new Error(`Appointment not found for SOAP note`);
+    }
+
+    // Validate clinic access
+    if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
+      throw new Error('Access denied: You do not have access to this SOAP physical exam');
+    }
+
+    // Update physical exam
+    const { data: updatedPhysical, error } = await this.supabaseService
+      .getClient()
+      .from('soap_physical')
+      .update({
+        supervising_user: data.supervising_user,
+        exam: data,
+      })
+      .eq('id', id)
+      .select(`
+        id,
+        created_at,
+        soap_notes_id,
+        supervising_user,
+        title,
+        template,
+        exam,
+        supervisor:users!supervising_user(id, full_name)
+      `)
+      .single();
+
+    if (error) throw error;
+    return updatedPhysical;
+  }
+
+  /**
+   * Create treatment plan
+   */
+  async createTreatmentPlan(data: any, user: UserContext): Promise<any> {
+    // Validate appointment access
+    if (data.appointment_id) {
+      const { data: appointment, error: appointmentError } = await this.supabaseService
+        .getClient()
+        .from('appointments')
+        .select('tenant_id')
+        .eq('id', data.appointment_id)
+        .single();
+
+      if (appointmentError || !appointment) {
+        throw new Error(`Appointment with id ${data.appointment_id} not found`);
+      }
+
+      // Validate clinic access
+      if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
+        throw new Error('Access denied: You do not have access to this appointment');
+      }
+    }
+
+    // If soap_note_id is provided, validate access
+    if (data.soap_note_id) {
+      const { data: soapNote, error: soapError } = await this.supabaseService
+        .getClient()
+        .from('soap_notes')
+        .select('appointment_id, appointments!inner(tenant_id)')
+        .eq('id', data.soap_note_id)
+        .single();
+
+      if (soapError || !soapNote) {
+        throw new Error(`SOAP note with id ${data.soap_note_id} not found`);
+      }
+
+      const appointment = (soapNote as any).appointments;
+      if (appointment?.tenant_id && user.clinic_id !== appointment.tenant_id) {
+        throw new Error('Access denied: You do not have access to this SOAP note');
+      }
+    }
+
+    // Create treatment plan
+    const { data: treatmentPlan, error } = await this.supabaseService
+      .getClient()
+      .from('treatment_plans')
+      .insert(data)
+      .select(`
+        *,
+        medications(*)
+      `)
+      .single();
+
+    if (error) throw error;
+    return treatmentPlan;
+  }
+
+  /**
+   * Update treatment plan status
+   */
+  async updateTreatmentPlanStatus(id: string, status: string, user: UserContext): Promise<any> {
+    // First, get the treatment plan to validate access
+    const { data: treatmentPlan, error: treatmentError } = await this.supabaseService
+      .getClient()
+      .from('treatment_plans')
+      .select('appointment_id, soap_note_id')
+      .eq('id', id)
+      .single();
+
+    if (treatmentError || !treatmentPlan) {
+      throw new Error(`Treatment plan with id ${id} not found`);
+    }
+
+    // Validate clinic access via appointment or SOAP note
+    let hasAccess = false;
+    
+    if (treatmentPlan.appointment_id) {
+      const { data: appointment, error: appointmentError } = await this.supabaseService
+        .getClient()
+        .from('appointments')
+        .select('tenant_id')
+        .eq('id', treatmentPlan.appointment_id)
+        .single();
+
+      if (!appointmentError && appointment) {
+        hasAccess = appointment.tenant_id ? user.clinic_id === appointment.tenant_id : true;
+      }
+    } else if (treatmentPlan.soap_note_id) {
+      const { data: soapNote, error: soapError } = await this.supabaseService
+        .getClient()
+        .from('soap_notes')
+        .select('appointment_id')
+        .eq('id', treatmentPlan.soap_note_id)
+        .single();
+
+      if (!soapError && soapNote && soapNote.appointment_id) {
+        const { data: appointment, error: appointmentError } = await this.supabaseService
+          .getClient()
+          .from('appointments')
+          .select('tenant_id')
+          .eq('id', soapNote.appointment_id)
+          .single();
+
+        if (!appointmentError && appointment) {
+          hasAccess = appointment.tenant_id ? user.clinic_id === appointment.tenant_id : true;
+        }
+      }
+    }
+
+    if (!hasAccess) {
+      throw new Error('Access denied: You do not have access to this treatment plan');
+    }
+
+    // Update treatment plan
+    const { data: updatedPlan, error } = await this.supabaseService
+      .getClient()
+      .from('treatment_plans')
+      .update({ status })
+      .eq('id', id)
+      .select(`
+        *,
+        medications(*)
+      `)
+      .single();
+
+    if (error) throw error;
+    return updatedPlan;
+  }
+
+  /**
+   * Create discharge instructions
+   */
+  async createDischargeInstructions(data: any, user: UserContext): Promise<any> {
+    // Validate appointment access
+    const { data: appointment, error: appointmentError } = await this.supabaseService
+      .getClient()
+      .from('appointments')
+      .select('tenant_id')
+      .eq('id', data.appointment_id)
+      .single();
+
+    if (appointmentError || !appointment) {
+      throw new Error(`Appointment with id ${data.appointment_id} not found`);
+    }
+
+    // Validate clinic access
+    if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
+      throw new Error('Access denied: You do not have access to this appointment');
+    }
+
+    // Create discharge instructions
+    const { data: instructions, error } = await this.supabaseService
+      .getClient()
+      .from('discharge_instructions')
+      .insert(data)
+      .select(`
+        *,
+        provided_by_user:users!provided_by(id, full_name)
+      `)
+      .single();
+
+    if (error) throw error;
+    return instructions;
+  }
+
+  /**
+   * Get discharge instructions by appointment
+   */
+  async getDischargeInstructionsByAppointment(appointmentId: string, user: UserContext): Promise<any> {
+    // Validate appointment access
+    const { data: appointment, error: appointmentError } = await this.supabaseService
+      .getClient()
+      .from('appointments')
+      .select('tenant_id')
+      .eq('id', appointmentId)
+      .single();
+
+    if (appointmentError || !appointment) {
+      throw new Error(`Appointment with id ${appointmentId} not found`);
+    }
+
+    // Validate clinic access
+    if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
+      throw new Error('Access denied: You do not have access to this appointment');
+    }
+
+    // Get discharge instructions
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('discharge_instructions')
+      .select(`
+        *,
+        provided_by_user:users!provided_by(id, full_name)
+      `)
+      .eq('appointment_id', appointmentId)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error; // PGRST116 = no rows found
+    return data || null;
+  }
+
+  /**
+   * Mark discharge instructions as provided
+   */
+  async markDischargeInstructionsProvided(id: string, user: UserContext): Promise<any> {
+    // First, get the discharge instructions to validate access
+    const { data: instructions, error: instructionsError } = await this.supabaseService
+      .getClient()
+      .from('discharge_instructions')
+      .select('appointment_id')
+      .eq('id', id)
+      .single();
+
+    if (instructionsError || !instructions) {
+      throw new Error(`Discharge instructions with id ${id} not found`);
+    }
+
+    // Get appointment to validate clinic access
+    const { data: appointment, error: appointmentError } = await this.supabaseService
+      .getClient()
+      .from('appointments')
+      .select('tenant_id')
+      .eq('id', instructions.appointment_id)
+      .single();
+
+    if (appointmentError || !appointment) {
+      throw new Error(`Appointment not found for discharge instructions`);
+    }
+
+    // Validate clinic access
+    if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
+      throw new Error('Access denied: You do not have access to this discharge instructions');
+    }
+
+    // Mark as provided
+    const { data: updatedInstructions, error } = await this.supabaseService
+      .getClient()
+      .from('discharge_instructions')
+      .update({
+        provided_to_client: true,
+        provided_at: new Date().toISOString(),
+        provided_by: user.user_id
+      })
+      .eq('id', id)
+      .select(`
+        *,
+        provided_by_user:users!provided_by(id, full_name)
+      `)
+      .single();
+
+    if (error) throw error;
+    return updatedInstructions;
   }
 }
 

@@ -693,13 +693,28 @@ export class ClientsService {
         service_type,
         status,
         pet_id,
+        client_id,
         vet_id,
+        tenant_id,
+        symptoms,
         notes,
+        created_at,
+        updated_at,
         pets (
           id,
           name,
           species,
           breed
+        ),
+        clients!client_id (
+          id,
+          phone,
+          user_id,
+          users!user_id (
+            id,
+            full_name,
+            email
+          )
         ),
         users!vet_id (
           id,
