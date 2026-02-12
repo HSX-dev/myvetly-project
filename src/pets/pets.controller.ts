@@ -40,7 +40,7 @@ export class PetsController {
       return this.petsService.findAll(user);
     }
     // Should not reach here due to AuthGuard, but for type safety
-    throw new Error('User context required');
+    throw new InternalServerErrorException('User context required. This should not happen - authentication may have failed.');
   }
 
   @Get('species')

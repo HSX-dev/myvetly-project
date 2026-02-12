@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, InternalServerErrorException, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreateAppointmentDto, UpdateAppointmentDto, SendConfirmationEmailDto } from './dto';
@@ -606,7 +606,7 @@ export class AppointmentsService {
 
     // Validate clinic access
     if (pet.tenant_id && user?.clinic_id !== pet.tenant_id && user?.role !== 'super_admin') {
-      throw new Error('Access denied: You do not have access to this pet');
+      throw new ForbiddenException('Access denied: You do not have access to this pet');
     }
 
     const { data, error } = await this.supabaseService
@@ -684,7 +684,7 @@ export class AppointmentsService {
 
     // Validate clinic access
     if (client.tenant_id && user?.clinic_id !== client.tenant_id && user?.role !== 'super_admin') {
-      throw new Error('Access denied: You do not have access to this client');
+      throw new ForbiddenException('Access denied: You do not have access to this client');
     }
 
     let query = this.supabaseService
