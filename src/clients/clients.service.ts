@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, InternalServerErrorException, ConflictException, BadRequestException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreateClientDto, UpdateClientDto, CreateClientNoteDto, UpdateClientNoteDto } from './dto';
@@ -288,7 +288,7 @@ export class ClientsService {
 
       // CRITICAL: organization_id and clinic_id are required for multi-tenant isolation
       if (!clientFields.organization_id || !clientFields.clinic_id) {
-        throw new Error('Organization ID and Clinic ID are required to create a client');
+        throw new BadRequestException('Organization ID and Clinic ID are required to create a client');
       }
 
       // Check if user with this email already exists in the SAME clinic/organization
@@ -303,7 +303,7 @@ export class ClientsService {
           .maybeSingle();
 
         if (existingUser) {
-          throw new Error(
+          throw new ConflictException(
             `A client with email ${email} is already registered in this clinic.`,
           );
         }
@@ -335,12 +335,12 @@ export class ClientsService {
           userError.message.includes('unique')
         ) {
           if (email) {
-            throw new Error(`A client with email ${email} is already registered.`);
+            throw new ConflictException(`A client with email ${email} is already registered.`);
           } else {
-            throw new Error(`Failed to create user: ${userError.message}`);
+            throw new BadRequestException(`Failed to create user: ${userError.message}`);
           }
         } else {
-          throw new Error(`Failed to create user: ${userError.message}`);
+          throw new BadRequestException(`Failed to create user: ${userError.message}`);
         }
       } else {
         userId = newUser?.id || newUserId;
@@ -348,7 +348,7 @@ export class ClientsService {
     }
 
     if (!userId) {
-      throw new Error('User ID is required to create a client');
+      throw new BadRequestException('User ID is required to create a client');
     }
 
     // Verify the user exists before creating the client
@@ -360,12 +360,12 @@ export class ClientsService {
       .maybeSingle();
 
     if (verifyError || !verifyUser) {
-      throw new Error(`User with ID ${userId} does not exist. Cannot create client.`);
+      throw new NotFoundException(`User with ID ${userId} does not exist. Cannot create client.`);
     }
 
     // Double-check the user belongs to the correct clinic
     if (verifyUser.clinic_id !== clientFields.clinic_id) {
-      throw new Error(
+      throw new BadRequestException(
         `User belongs to a different clinic. Expected ${clientFields.clinic_id}, got ${verifyUser.clinic_id}`,
       );
     }
@@ -419,11 +419,11 @@ export class ClientsService {
       .single();
 
     if (error) {
-      throw new Error(`Client creation failed: ${error.message}`);
+      throw new BadRequestException(`Client creation failed: ${error.message}`);
     }
 
     if (!data) {
-      throw new Error('No data returned from create');
+      throw new InternalServerErrorException('No data returned from create');
     }
 
     const { users, ...newClient } = data;
@@ -453,7 +453,7 @@ export class ClientsService {
         .single();
 
       if (fetchError) {
-        throw new Error(`Failed to fetch client: ${fetchError.message}`);
+        throw new InternalServerErrorException(`Failed to fetch client: ${fetchError.message}`);
       }
 
       // Prepare client fields for update - map form field names to database field names
@@ -500,7 +500,7 @@ export class ClientsService {
         .single();
 
       if (clientError) {
-        throw new Error(`Failed to update client: ${clientError.message}`);
+        throw new BadRequestException(`Failed to update client: ${clientError.message}`);
       }
 
       // Update the users table if we have user fields
@@ -523,7 +523,7 @@ export class ClientsService {
           .eq('id', currentClient.user_id);
 
         if (userError) {
-          throw new Error(`Failed to update user info: ${userError.message}`);
+          throw new BadRequestException(`Failed to update user info: ${userError.message}`);
         }
       }
 
@@ -539,7 +539,7 @@ export class ClientsService {
         .single();
 
       if (error) {
-        throw new Error(`Failed to fetch updated client: ${error.message}`);
+        throw new InternalServerErrorException(`Failed to fetch updated client: ${error.message}`);
       }
 
       if (!data) {

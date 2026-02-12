@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { UserContext } from '../auth/auth.guard';
 import { AiService } from '../ai/ai.service';
@@ -98,11 +98,11 @@ export class SoapService {
       .single();
 
     if (petError || !pet) {
-      throw new Error(`Pet with id ${petId} not found`);
+      throw new NotFoundException(`Pet with id ${petId} not found`);
     }
 
     if (pet.tenant_id && user.clinic_id !== pet.tenant_id) {
-      throw new Error('Access denied: You do not have access to this pet');
+      throw new ForbiddenException('Access denied: You do not have access to this pet');
     }
 
     const { data, error } = await this.supabaseService
@@ -189,12 +189,12 @@ export class SoapService {
       .single();
 
     if (appointmentError || !appointment) {
-      throw new Error(`Appointment with id ${appointmentId} not found`);
+      throw new NotFoundException(`Appointment with id ${appointmentId} not found`);
     }
 
     // Validate clinic access
     if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
-      throw new Error('Access denied: You do not have access to this appointment');
+      throw new ForbiddenException('Access denied: You do not have access to this appointment');
     }
 
     // Get SOAP note for this appointment
@@ -233,7 +233,7 @@ export class SoapService {
       .single();
 
     if (soapError || !soapNote) {
-      throw new Error(`SOAP note with id ${soapNoteId} not found`);
+      throw new NotFoundException(`SOAP note with id ${soapNoteId} not found`);
     }
 
     // Get appointment to check clinic access
@@ -245,12 +245,12 @@ export class SoapService {
       .single();
 
     if (appointmentError || !appointment) {
-      throw new Error(`Appointment not found for SOAP note ${soapNoteId}`);
+      throw new NotFoundException(`Appointment not found for SOAP note ${soapNoteId}`);
     }
 
     // Validate clinic access
     if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
-      throw new Error('Access denied: You do not have access to this SOAP note');
+      throw new ForbiddenException('Access denied: You do not have access to this SOAP note');
     }
 
     // Get treatment plans
@@ -279,7 +279,7 @@ export class SoapService {
       .single();
 
     if (soapError || !soapNote) {
-      throw new Error(`SOAP note with id ${soapNoteId} not found`);
+      throw new NotFoundException(`SOAP note with id ${soapNoteId} not found`);
     }
 
     // Get appointment to check clinic access
@@ -291,12 +291,12 @@ export class SoapService {
       .single();
 
     if (appointmentError || !appointment) {
-      throw new Error(`Appointment not found for SOAP note ${soapNoteId}`);
+      throw new NotFoundException(`Appointment not found for SOAP note ${soapNoteId}`);
     }
 
     // Validate clinic access
     if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
-      throw new Error('Access denied: You do not have access to this SOAP note');
+      throw new ForbiddenException('Access denied: You do not have access to this SOAP note');
     }
 
     // Get body maps
@@ -326,7 +326,7 @@ export class SoapService {
 
     // Validate clinic access
     if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
-      throw new Error('Access denied: You do not have access to this appointment');
+      throw new ForbiddenException('Access denied: You do not have access to this appointment');
     }
 
     // Create SOAP note
@@ -379,7 +379,7 @@ export class SoapService {
 
     // Validate clinic access
     if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
-      throw new Error('Access denied: You do not have access to this SOAP note');
+      throw new ForbiddenException('Access denied: You do not have access to this SOAP note');
     }
 
     // Update SOAP note
@@ -429,7 +429,7 @@ export class SoapService {
 
     // Validate clinic access
     if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
-      throw new Error('Access denied: You do not have access to this SOAP note');
+      throw new ForbiddenException('Access denied: You do not have access to this SOAP note');
     }
 
     // Get full SOAP note with relations
@@ -461,7 +461,7 @@ export class SoapService {
       .single();
 
     if (soapError || !soapNote) {
-      throw new Error(`SOAP note with id ${soapNoteId} not found`);
+      throw new NotFoundException(`SOAP note with id ${soapNoteId} not found`);
     }
 
     // Get appointment to check clinic access
@@ -473,12 +473,12 @@ export class SoapService {
       .single();
 
     if (appointmentError || !appointment) {
-      throw new Error(`Appointment not found for SOAP note ${soapNoteId}`);
+      throw new NotFoundException(`Appointment not found for SOAP note ${soapNoteId}`);
     }
 
     // Validate clinic access
     if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
-      throw new Error('Access denied: You do not have access to this SOAP note');
+      throw new ForbiddenException('Access denied: You do not have access to this SOAP note');
     }
 
     // Check for active expansion
@@ -659,13 +659,13 @@ export class SoapService {
       if (bodyMapError?.code === 'PGRST116') {
         return null; // No rows found
       }
-      throw new Error(`Body map with id ${id} not found`);
+      throw new NotFoundException(`Body map with id ${id} not found`);
     }
 
     // Get appointment to check clinic access
     const appointmentId = (bodyMap.soap_notes as any)?.appointment_id;
     if (!appointmentId) {
-      throw new Error(`Appointment not found for body map ${id}`);
+      throw new NotFoundException(`Appointment not found for body map ${id}`);
     }
 
     const { data: appointment, error: appointmentError } = await this.supabaseService
@@ -676,12 +676,12 @@ export class SoapService {
       .single();
 
     if (appointmentError || !appointment) {
-      throw new Error(`Appointment not found for body map ${id}`);
+      throw new NotFoundException(`Appointment not found for body map ${id}`);
     }
 
     // Validate clinic access
     if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
-      throw new Error('Access denied: You do not have access to this body map');
+      throw new ForbiddenException('Access denied: You do not have access to this body map');
     }
 
     // Remove nested soap_notes from response
@@ -716,7 +716,7 @@ export class SoapService {
 
     // Validate clinic access
     if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
-      throw new Error('Access denied: You do not have access to this SOAP note');
+      throw new ForbiddenException('Access denied: You do not have access to this SOAP note');
     }
 
     // Create body map
@@ -728,7 +728,7 @@ export class SoapService {
       .single();
 
     if (error) {
-      throw new Error(`Failed to create body map: ${error.message || 'Unknown error'}`);
+      throw new InternalServerErrorException(`Failed to create body map: ${error.message || 'Unknown error'}`);
     }
 
     return bodyMap;
@@ -738,7 +738,7 @@ export class SoapService {
     // First get the body map to validate access
     const bodyMap = await this.getBodyMapById(id, user);
     if (!bodyMap) {
-      throw new Error(`Body map with id ${id} not found`);
+      throw new NotFoundException(`Body map with id ${id} not found`);
     }
 
     // Update body map
@@ -751,7 +751,7 @@ export class SoapService {
       .single();
 
     if (error) {
-      throw new Error(`Failed to update body map: ${error.message || 'Unknown error'}`);
+      throw new InternalServerErrorException(`Failed to update body map: ${error.message || 'Unknown error'}`);
     }
 
     return updatedBodyMap;
@@ -761,7 +761,7 @@ export class SoapService {
     // First get the body map to validate access and get thumbnail URL
     const bodyMap = await this.getBodyMapById(id, user);
     if (!bodyMap) {
-      throw new Error(`Body map with id ${id} not found`);
+      throw new NotFoundException(`Body map with id ${id} not found`);
     }
 
     // Delete body map
@@ -772,7 +772,7 @@ export class SoapService {
       .eq('id', id);
 
     if (error) {
-      throw new Error(`Failed to delete body map: ${error.message || 'Unknown error'}`);
+      throw new InternalServerErrorException(`Failed to delete body map: ${error.message || 'Unknown error'}`);
     }
 
     // Return thumbnail URL and soap_note_id so frontend can delete it from storage
@@ -798,7 +798,7 @@ export class SoapService {
       .single();
 
     if (soapError || !soapNote) {
-      throw new Error(`SOAP note with id ${soapNoteId} not found`);
+      throw new NotFoundException(`SOAP note with id ${soapNoteId} not found`);
     }
 
     // Get appointment to check clinic access
@@ -810,12 +810,12 @@ export class SoapService {
       .single();
 
     if (appointmentError || !appointment) {
-      throw new Error(`Appointment not found for SOAP note ${soapNoteId}`);
+      throw new NotFoundException(`Appointment not found for SOAP note ${soapNoteId}`);
     }
 
     // Validate clinic access
     if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
-      throw new Error('Access denied: You do not have access to this SOAP note');
+      throw new ForbiddenException('Access denied: You do not have access to this SOAP note');
     }
 
     const result = await this.aiService.expandSoap(
@@ -859,7 +859,7 @@ export class SoapService {
       .single();
 
     if (soapError || !soapNote) {
-      throw new Error(`SOAP note with id ${soapNoteId} not found`);
+      throw new NotFoundException(`SOAP note with id ${soapNoteId} not found`);
     }
 
     // Get appointment to check clinic access
@@ -871,12 +871,12 @@ export class SoapService {
       .single();
 
     if (appointmentError || !appointment) {
-      throw new Error(`Appointment not found for SOAP note ${soapNoteId}`);
+      throw new NotFoundException(`Appointment not found for SOAP note ${soapNoteId}`);
     }
 
     // Validate clinic access
     if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
-      throw new Error('Access denied: You do not have access to this SOAP note');
+      throw new ForbiddenException('Access denied: You do not have access to this SOAP note');
     }
 
     // Get current SOAP note data to save as snapshot before reverting
@@ -899,7 +899,7 @@ export class SoapService {
       .maybeSingle();
 
     if (snapshotError || !latestSnapshot) {
-      throw new Error('No active AI expansion found to undo.');
+      throw new NotFoundException('No active AI expansion found to undo.');
     }
 
     // Revert SOAP note to snapshot data
@@ -910,7 +910,7 @@ export class SoapService {
       .eq('id', soapNoteId);
 
     if (updateError) {
-      throw new Error(`Failed to revert SOAP note: ${updateError.message}`);
+      throw new InternalServerErrorException(`Failed to revert SOAP note: ${updateError.message}`);
     }
 
     // Mark snapshot as undone
@@ -956,7 +956,7 @@ export class SoapService {
       .createSignedUrl(filePath, expiresIn);
     
     if (error) {
-      throw new Error(`Failed to create signed URL: ${error.message}`);
+      throw new InternalServerErrorException(`Failed to create signed URL: ${error.message}`);
     }
     
     return { url: data.signedUrl };
@@ -973,7 +973,7 @@ export class SoapService {
       .list(folder);
     
     if (error) {
-      throw new Error(`Failed to list files: ${error.message}`);
+      throw new InternalServerErrorException(`Failed to list files: ${error.message}`);
     }
     
     return data || [];
@@ -1043,12 +1043,12 @@ export class SoapService {
       .single();
 
     if (appointmentError || !appointment) {
-      throw new Error(`Appointment with id ${appointmentId} not found`);
+      throw new NotFoundException(`Appointment with id ${appointmentId} not found`);
     }
 
     // Validate clinic access
     if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
-      throw new Error('Access denied: You do not have access to this appointment');
+      throw new ForbiddenException('Access denied: You do not have access to this appointment');
     }
 
     const supabase = this.supabaseService.getClient();
@@ -1068,12 +1068,12 @@ export class SoapService {
 
     if (uploadError) {
       if (uploadError.message.includes('not found') || uploadError.message.includes('Bucket')) {
-        throw new Error('Bucket "discharge-instructions" does not exist. Please create it in Supabase Storage and ensure it is public.');
+        throw new BadRequestException('Bucket "discharge-instructions" does not exist. Please create it in Supabase Storage and ensure it is public.');
       }
       if (uploadError.message.includes('row-level security') || uploadError.message.includes('permission')) {
-        throw new Error(`Permission denied: ${uploadError.message}. Please check storage RLS policies.`);
+        throw new ForbiddenException(`Permission denied: ${uploadError.message}. Please check storage RLS policies.`);
       }
-      throw new Error(`Failed to upload file: ${uploadError.message}`);
+      throw new InternalServerErrorException(`Failed to upload file: ${uploadError.message}`);
     }
 
     // Get public URL
@@ -1102,7 +1102,7 @@ export class SoapService {
       .single();
 
     if (soapError || !soapNote) {
-      throw new Error(`SOAP note with id ${soapNoteId} not found`);
+      throw new NotFoundException(`SOAP note with id ${soapNoteId} not found`);
     }
 
     // Get appointment to check clinic access
@@ -1114,12 +1114,12 @@ export class SoapService {
       .single();
 
     if (appointmentError || !appointment) {
-      throw new Error(`Appointment not found for SOAP note ${soapNoteId}`);
+      throw new NotFoundException(`Appointment not found for SOAP note ${soapNoteId}`);
     }
 
     // Validate clinic access
     if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
-      throw new Error('Access denied: You do not have access to this SOAP note');
+      throw new ForbiddenException('Access denied: You do not have access to this SOAP note');
     }
 
     const supabase = this.supabaseService.getClient();
@@ -1141,12 +1141,12 @@ export class SoapService {
 
     if (uploadError) {
       if (uploadError.message.includes('not found') || uploadError.message.includes('Bucket')) {
-        throw new Error('Bucket "body-maps" does not exist. Please create it in Supabase Storage and ensure it is public.');
+        throw new BadRequestException('Bucket "body-maps" does not exist. Please create it in Supabase Storage and ensure it is public.');
       }
       if (uploadError.message.includes('row-level security') || uploadError.message.includes('permission')) {
-        throw new Error(`Permission denied: ${uploadError.message}. Please check storage RLS policies for the annotations folder.`);
+        throw new ForbiddenException(`Permission denied: ${uploadError.message}. Please check storage RLS policies for the annotations folder.`);
       }
-      throw new Error(`Failed to upload thumbnail: ${uploadError.message}`);
+      throw new InternalServerErrorException(`Failed to upload thumbnail: ${uploadError.message}`);
     }
 
     // Get public URL
@@ -1167,7 +1167,7 @@ export class SoapService {
     // Extract soap_note_id from file path to validate access
     const pathMatch = filePath.match(/annotations\/([^/]+)\//);
     if (!pathMatch || !pathMatch[1]) {
-      throw new Error('Invalid file path format');
+      throw new BadRequestException('Invalid file path format');
     }
 
     const soapNoteId = pathMatch[1];
@@ -1181,7 +1181,7 @@ export class SoapService {
       .single();
 
     if (soapError || !soapNote) {
-      throw new Error(`SOAP note with id ${soapNoteId} not found`);
+      throw new NotFoundException(`SOAP note with id ${soapNoteId} not found`);
     }
 
     // Get appointment to check clinic access
@@ -1193,12 +1193,12 @@ export class SoapService {
       .single();
 
     if (appointmentError || !appointment) {
-      throw new Error(`Appointment not found for SOAP note ${soapNoteId}`);
+      throw new NotFoundException(`Appointment not found for SOAP note ${soapNoteId}`);
     }
 
     // Validate clinic access
     if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
-      throw new Error('Access denied: You do not have access to this SOAP note');
+      throw new ForbiddenException('Access denied: You do not have access to this SOAP note');
     }
 
     const supabase = this.supabaseService.getClient();
@@ -1207,7 +1207,7 @@ export class SoapService {
       .remove([filePath]);
 
     if (error) {
-      throw new Error(`Failed to remove thumbnail: ${error.message}`);
+      throw new InternalServerErrorException(`Failed to remove thumbnail: ${error.message}`);
     }
 
     return { success: true };
@@ -1226,7 +1226,7 @@ export class SoapService {
       .single();
 
     if (soapError || !soapNote) {
-      throw new Error(`SOAP note with id ${soapNoteId} not found`);
+      throw new NotFoundException(`SOAP note with id ${soapNoteId} not found`);
     }
 
     // Get appointment to check clinic access
@@ -1238,12 +1238,12 @@ export class SoapService {
       .single();
 
     if (appointmentError || !appointment) {
-      throw new Error(`Appointment not found for SOAP note ${soapNoteId}`);
+      throw new NotFoundException(`Appointment not found for SOAP note ${soapNoteId}`);
     }
 
     // Validate clinic access
     if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
-      throw new Error('Access denied: You do not have access to this SOAP note');
+      throw new ForbiddenException('Access denied: You do not have access to this SOAP note');
     }
 
     // Create vitals
@@ -1354,7 +1354,7 @@ export class SoapService {
       .single();
 
     if (soapError || !soapNote) {
-      throw new Error(`SOAP note with id ${soapNoteId} not found`);
+      throw new NotFoundException(`SOAP note with id ${soapNoteId} not found`);
     }
 
     // Get appointment to check clinic access
@@ -1366,12 +1366,12 @@ export class SoapService {
       .single();
 
     if (appointmentError || !appointment) {
-      throw new Error(`Appointment not found for SOAP note ${soapNoteId}`);
+      throw new NotFoundException(`Appointment not found for SOAP note ${soapNoteId}`);
     }
 
     // Validate clinic access
     if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
-      throw new Error('Access denied: You do not have access to this SOAP note');
+      throw new ForbiddenException('Access denied: You do not have access to this SOAP note');
     }
 
     // Create physical exam
@@ -1488,7 +1488,7 @@ export class SoapService {
 
       // Validate clinic access
       if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
-        throw new Error('Access denied: You do not have access to this appointment');
+        throw new ForbiddenException('Access denied: You do not have access to this appointment');
       }
     }
 
@@ -1507,7 +1507,7 @@ export class SoapService {
 
       const appointment = (soapNote as any).appointments;
       if (appointment?.tenant_id && user.clinic_id !== appointment.tenant_id) {
-        throw new Error('Access denied: You do not have access to this SOAP note');
+        throw new ForbiddenException('Access denied: You do not have access to this SOAP note');
       }
     }
 
@@ -1616,7 +1616,7 @@ export class SoapService {
 
     // Validate clinic access
     if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
-      throw new Error('Access denied: You do not have access to this appointment');
+      throw new ForbiddenException('Access denied: You do not have access to this appointment');
     }
 
     // Create discharge instructions
@@ -1647,12 +1647,12 @@ export class SoapService {
       .single();
 
     if (appointmentError || !appointment) {
-      throw new Error(`Appointment with id ${appointmentId} not found`);
+      throw new NotFoundException(`Appointment with id ${appointmentId} not found`);
     }
 
     // Validate clinic access
     if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
-      throw new Error('Access denied: You do not have access to this appointment');
+      throw new ForbiddenException('Access denied: You do not have access to this appointment');
     }
 
     // Get discharge instructions

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreateFileDto } from './dto';
 
@@ -158,7 +158,7 @@ export class FilesService {
     // Assuming format: bucket-name/path/to/file
     const pathParts = storagePath.split('/');
     if (pathParts.length < 2) {
-      throw new Error('Invalid storage path format');
+      throw new BadRequestException('Invalid storage path format');
     }
 
     const bucket = pathParts[0];
@@ -189,7 +189,7 @@ export class FilesService {
         .single();
 
       if (petsError || !pets) {
-        throw new Error(`Failed to find a pet for client ${createFileDto.client_id}. Client files must be linked to a pet.`);
+        throw new NotFoundException(`Failed to find a pet for client ${createFileDto.client_id}. Client files must be linked to a pet.`);
       }
 
       // Use the pet_id instead of client_id
@@ -214,7 +214,7 @@ export class FilesService {
       .single();
 
     if (error) {
-      throw new Error(`Failed to create file record: ${error.message}`);
+      throw new InternalServerErrorException(`Failed to create file record: ${error.message}`);
     }
 
     return data;
@@ -228,7 +228,7 @@ export class FilesService {
       .eq('id', id);
 
     if (error) {
-      throw new Error(`Failed to delete file record: ${error.message}`);
+      throw new InternalServerErrorException(`Failed to delete file record: ${error.message}`);
     }
 
     return { success: true };

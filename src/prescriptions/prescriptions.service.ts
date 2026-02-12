@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { UserContext } from '../auth/auth.guard';
 
@@ -195,7 +195,7 @@ export class PrescriptionsService {
       .single();
 
     if (soapError || !soapNote) {
-      throw new Error(`SOAP note with id ${soapId} not found`);
+      throw new NotFoundException(`SOAP note with id ${soapId} not found`);
     }
 
     // Get appointment to check clinic access
@@ -207,12 +207,12 @@ export class PrescriptionsService {
       .single();
 
     if (appointmentError || !appointment) {
-      throw new Error(`Appointment not found for SOAP note ${soapId}`);
+      throw new NotFoundException(`Appointment not found for SOAP note ${soapId}`);
     }
 
     // Validate clinic access
     if (appointment.tenant_id && user.clinic_id !== appointment.tenant_id) {
-      throw new Error('Access denied: You do not have access to this SOAP note');
+      throw new ForbiddenException('Access denied: You do not have access to this SOAP note');
     }
 
     // Get prescriptions
