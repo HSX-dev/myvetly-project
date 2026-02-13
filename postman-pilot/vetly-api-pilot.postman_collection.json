@@ -83,7 +83,7 @@
 							]
 						},
 						"description": {
-							"content": "Retrieve all clients for the authenticated user's clinic. Requires authentication.\n\nThe first client ID will be automatically extracted and stored in the `client_id` environment variable for use in Update/Delete requests.",
+							"content": "Retrieve all clients for the authenticated user's clinic. Requires authentication.\n\nThe first client ID will be automatically extracted and stored in the `client_id` environment variable for use in Update/Delete requests.\n\n## Response\nReturns an array of clients. If no clients are found, returns an empty array `[]`.\n\n### Array Item Structure\nEach item in the array has the following structure:\n```typescript\n{\n  id: string;                    // Client UUID\n  user_id: string;              // User UUID (linked to users table)\n  organization_id: string;      // Organization UUID\n  clinic_id: string;            // Clinic UUID\n  phone: string | null;         // Phone number (optional)\n  first_name: string;           // First name (from users table)\n  last_name: string;            // Last name (from users table)\n  full_name: string;            // Full name (from users table)\n  email: string;                // Email (from users table)\n  client_type: string | null;   // Client type (e.g., 'Individual', 'Family', 'Business')\n  account_source: string | null; // Account source (e.g., 'Walk-in', 'Referral')\n  status: string;               // Client status (e.g., 'active', 'deleted')\n  created_at: string;           // ISO 8601 timestamp\n  clinic_name: string;          // Clinic name (e.g., 'N/A')\n  pet_names: Array<{            // Array of pet names for this client\n    id: string;                 // Pet UUID\n    name: string;               // Pet name\n  }>;\n  // ... other fields from clients table\n}\n```",
 							"type": "text/markdown"
 						}
 					},
@@ -266,6 +266,32 @@
 				},
 				{
 					"name": "Get Client by User ID",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set userId from environment variable",
+									"const userId = pm.environment.get('user_id');",
+									"if (userId && userId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const userIdVar = url.variables.get('userId');",
+									"    if (userIdVar) {",
+									"        userIdVar.value = userId;",
+									"        console.log('userId automatically set to:', userId);",
+									"    } else {",
+									"        console.error('ERROR: userId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: user_id is not set in environment.');",
+									"    console.error('The user_id should be automatically set by the pre-request script when fetching the token.');",
+									"    console.error('If this error persists, please check your Supabase credentials and ensure /api/users/me returns a valid user profile.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -290,12 +316,12 @@
 								{
 									"key": "userId",
 									"value": "",
-									"description": "User UUID"
+									"description": "User UUID - automatically populated from user_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Get client by user ID.",
+							"content": "Get client by user ID. The `userId` parameter is automatically set from the authenticated user's ID (from `/api/users/me`).",
 							"type": "text/markdown"
 						}
 					},
@@ -303,6 +329,32 @@
 				},
 				{
 					"name": "Get Client Notes",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically extract first note ID for use in Update/Delete requests",
+									"if (pm.response.code === 200) {",
+									"    const notes = pm.response.json();",
+									"    if (Array.isArray(notes) && notes.length > 0) {",
+									"        const firstNoteId = notes[0].id;",
+									"        pm.environment.set('note_id', firstNoteId);",
+									"        console.log('note_id automatically set to:', firstNoteId);",
+									"        ",
+									"        pm.test('Note ID extracted', function () {",
+									"            pm.expect(firstNoteId).to.be.a('string');",
+									"        });",
+									"    } else {",
+									"        console.log('No notes found in response - note_id not set');",
+									"        pm.environment.unset('note_id');",
+									"    }",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -332,7 +384,7 @@
 							]
 						},
 						"description": {
-							"content": "Get all notes for a client.",
+							"content": "Get all notes for a client. If notes exist, the first note ID will be automatically extracted and stored in the `note_id` environment variable for use in Update/Delete requests.\n\n## Response\nReturns an array of client notes. If the client has no notes, returns an empty array `[]`.\n\n### Array Item Structure\nEach item in the array has the following structure:\n```typescript\n{\n  id: string;                    // Note UUID\n  client_id: string;            // Client UUID\n  clinic_id: string;            // Clinic UUID\n  title: string | null;          // Note title (optional)\n  content: string;              // Note content\n  created_at: string;           // ISO 8601 timestamp\n  updated_at: string;            // ISO 8601 timestamp\n  created_by: string;           // User UUID who created the note\n  created_by_user: {            // User details (nested object)\n    id: string;                 // User UUID\n    full_name: string;         // User's full name\n  } | null;\n}\n```",
 							"type": "text/markdown"
 						}
 					},
@@ -391,6 +443,32 @@
 				},
 				{
 					"name": "Update Client Note",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set noteId from environment variable",
+									"const noteId = pm.environment.get('note_id');",
+									"if (noteId && noteId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const noteIdVar = url.variables.get('noteId');",
+									"    if (noteIdVar) {",
+									"        noteIdVar.value = noteId;",
+									"        console.log('noteId automatically set to:', noteId);",
+									"    } else {",
+									"        console.error('ERROR: noteId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: note_id is not set in environment.');",
+									"    console.error('Please run \"Get Client Notes\" first to automatically extract a note ID.');",
+									"    console.error('Note: If the client has no notes, you will need to create a note first or manually set the note_id environment variable.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "PATCH",
 						"header": [
@@ -429,12 +507,12 @@
 								{
 									"key": "noteId",
 									"value": "",
-									"description": "Note UUID"
+									"description": "Note UUID - automatically populated from note_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Update a client note.\n\n## Required Fields:\n- `content` (string) - Note content - **REQUIRED**\n\n## Optional Fields:\n- `title` (string) - Note title",
+							"content": "Update a client note. The `noteId` parameter is automatically set from the first note ID returned by \"Get Client Notes\" (if notes exist).\n\n## Required Fields:\n- `content` (string) - Note content - **REQUIRED**\n\n## Optional Fields:\n- `title` (string) - Note title",
 							"type": "text/markdown"
 						}
 					},
@@ -442,6 +520,32 @@
 				},
 				{
 					"name": "Delete Client Note",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set noteId from environment variable",
+									"const noteId = pm.environment.get('note_id');",
+									"if (noteId && noteId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const noteIdVar = url.variables.get('noteId');",
+									"    if (noteIdVar) {",
+									"        noteIdVar.value = noteId;",
+									"        console.log('noteId automatically set to:', noteId);",
+									"    } else {",
+									"        console.error('ERROR: noteId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: note_id is not set in environment.');",
+									"    console.error('Please run \"Get Client Notes\" first to automatically extract a note ID.');",
+									"    console.error('Note: If the client has no notes, you will need to create a note first or manually set the note_id environment variable.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "DELETE",
 						"header": [
@@ -466,12 +570,12 @@
 								{
 									"key": "noteId",
 									"value": "",
-									"description": "Note UUID"
+									"description": "Note UUID - automatically populated from note_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Delete a client note.",
+							"content": "Delete a client note. The `noteId` parameter is automatically set from the first note ID returned by \"Get Client Notes\" (if notes exist).",
 							"type": "text/markdown"
 						}
 					},
@@ -508,7 +612,7 @@
 							]
 						},
 						"description": {
-							"content": "Get all pets for a client.",
+							"content": "Get all pets for a client.\n\n## Response\nReturns an array of pets. If the client has no pets, returns an empty array `[]`.\n\n### Array Item Structure\nEach item in the array has the following structure:\n```typescript\n{\n  id: string;                    // Pet UUID\n  name: string;                 // Pet name\n  species: string;              // Pet species (e.g., 'Dog', 'Cat')\n  breed: string | null;         // Pet breed (optional)\n  birth_date: string | null;    // ISO 8601 date (optional)\n  weight: number | null;        // Pet weight (optional)\n  gender: string | null;        // Pet gender (optional)\n  allergies: string | null;    // Pet allergies (optional)\n  client_id: string;           // Client UUID (owner)\n  tenant_id: string;           // Clinic UUID\n  created_at: string;           // ISO 8601 timestamp\n  updated_at: string;          // ISO 8601 timestamp\n  // ... other pet fields from pets table\n}\n```",
 							"type": "text/markdown"
 						}
 					},
@@ -545,7 +649,7 @@
 							]
 						},
 						"description": {
-							"content": "Get all appointments for a client.",
+							"content": "Get all appointments for a client.\n\n## Response\nReturns an array of appointments. If the client has no appointments, returns an empty array `[]`.\n\n### Array Item Structure\nEach item in the array has the following structure:\n```typescript\n{\n  id: string;                    // Appointment UUID\n  appointment_time: string;     // ISO 8601 timestamp\n  service_type: string;         // Service type (e.g., 'Consultation', 'Surgery')\n  status: string;               // Appointment status (e.g., 'scheduled', 'completed')\n  payment_status: string;       // Payment status (e.g., 'pending', 'paid')\n  symptoms: string | null;      // Symptoms (optional)\n  notes: string | null;         // Notes (optional)\n  client_notes: string | null; // Client notes (optional)\n  reason_for_consultation: string | null; // Reason (optional)\n  estimated_duration: number | null; // Duration in minutes (optional)\n  emergency_level: string | null; // Emergency level (optional)\n  is_telehealth: boolean;      // Whether it's a telehealth appointment\n  pet_id: string | null;        // Pet UUID (optional)\n  client_id: string;           // Client UUID\n  vet_id: string | null;       // Veterinarian UUID (optional)\n  tenant_id: string;           // Clinic UUID\n  created_at: string;           // ISO 8601 timestamp\n  updated_at: string;           // ISO 8601 timestamp\n  pets: {                       // Pet details (nested object, if pet_id exists)\n    id: string;\n    name: string;\n    species: string;\n    breed: string | null;\n    clients: {\n      id: string;\n      phone: string | null;\n      users: {\n        id: string;\n        full_name: string;\n        email: string;\n      } | null;\n    } | null;\n  } | null;\n  users: {                      // Veterinarian details (nested object, if vet_id exists)\n    id: string;\n    full_name: string;\n  } | null;\n}\n```",
 							"type": "text/markdown"
 						}
 					},
@@ -687,6 +791,32 @@
 			"item": [
 				{
 					"name": "Get All Pets",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically extract first pet ID for use in other pet requests",
+									"if (pm.response.code === 200) {",
+									"    const pets = pm.response.json();",
+									"    if (Array.isArray(pets) && pets.length > 0) {",
+									"        const firstPetId = pets[0].id;",
+									"        pm.environment.set('pet_id', firstPetId);",
+									"        console.log('pet_id automatically set to:', firstPetId);",
+									"        ",
+									"        pm.test('Pet ID extracted', function () {",
+									"            pm.expect(firstPetId).to.be.a('string');",
+									"        });",
+									"    } else {",
+									"        console.log('No pets found in response - pet_id not set');",
+									"        pm.environment.unset('pet_id');",
+									"    }",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -714,7 +844,7 @@
 							]
 						},
 						"description": {
-							"content": "Retrieve all pets. If clinicId query parameter is provided, filters by clinic. Otherwise returns pets for authenticated user's clinic.",
+							"content": "Retrieve all pets. If clinicId query parameter is provided, filters by clinic. Otherwise returns pets for authenticated user's clinic.\n\nThe first pet ID will be automatically extracted and stored in the `pet_id` environment variable for use in other pet requests.\n\n## Response\nReturns an array of pets. If no pets are found, returns an empty array `[]`.\n\n### Array Item Structure\nEach item in the array has the following structure:\n```typescript\n{\n  id: string;                    // Pet UUID\n  name: string;                 // Pet name\n  species: string;              // Pet species (e.g., 'Dog', 'Cat')\n  breed: string | null;         // Pet breed (optional)\n  birth_date: string | null;    // ISO 8601 date (optional)\n  weight: number | null;        // Pet weight (optional)\n  gender: string | null;        // Pet gender (optional)\n  allergies: string | null;    // Pet allergies (optional)\n  client_id: string;           // Client UUID (owner)\n  tenant_id: string;           // Clinic UUID\n  created_at: string;           // ISO 8601 timestamp\n  updated_at: string;          // ISO 8601 timestamp\n  clients: {                    // Client details (nested object)\n    id: string;\n    user_id: string;\n    users: {\n      id: string;\n      email: string;\n      full_name: string;\n    } | null;\n  } | null;\n  // ... other fields from pets table\n}\n```",
 							"type": "text/markdown"
 						}
 					},
@@ -722,6 +852,32 @@
 				},
 				{
 					"name": "Get Species (Public)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically extract first species ID for use in Get Breeds request",
+									"if (pm.response.code === 200) {",
+									"    const species = pm.response.json();",
+									"    if (Array.isArray(species) && species.length > 0) {",
+									"        const firstSpeciesId = species[0].id;",
+									"        pm.environment.set('species_id', firstSpeciesId);",
+									"        console.log('species_id automatically set to:', firstSpeciesId);",
+									"        ",
+									"        pm.test('Species ID extracted', function () {",
+									"            pm.expect(firstSpeciesId).to.be.a('string');",
+									"        });",
+									"    } else {",
+									"        console.log('No species found in response - species_id not set');",
+									"        pm.environment.unset('species_id');",
+									"    }",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"url": {
@@ -736,7 +892,7 @@
 							]
 						},
 						"description": {
-							"content": "Get all available pet species. This is a public endpoint (no authentication required).",
+							"content": "Get all available pet species. This is a public endpoint (no authentication required).\n\nIf species exist, the first species ID will be automatically extracted and stored in the `species_id` environment variable for use in Get Breeds requests.\n\n## Response\nReturns an array of pet species. If no species are found, returns an empty array `[]`.\n\n### Array Item Structure\nEach item in the array has the following structure:\n```typescript\n{\n  id: string;                    // Species UUID\n  name: string;                 // Species name (e.g., 'Dog', 'Cat', 'Bird')\n  code: string | null;          // Species code (optional)\n  is_active: boolean;          // Whether the species is active\n  display_order: number | null; // Display order for sorting (optional)\n  created_at: string;           // ISO 8601 timestamp\n  updated_at: string;           // ISO 8601 timestamp\n  // ... other fields from pet_species table\n}\n```",
 							"type": "text/markdown"
 						}
 					},
@@ -744,6 +900,31 @@
 				},
 				{
 					"name": "Get Breeds (Public)",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set speciesId from environment variable",
+									"const speciesId = pm.environment.get('species_id');",
+									"if (speciesId && speciesId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const speciesIdParam = url.query.get('speciesId');",
+									"    if (speciesIdParam) {",
+									"        speciesIdParam.value = speciesId;",
+									"        console.log('speciesId automatically set to:', speciesId);",
+									"    } else {",
+									"        console.error('ERROR: speciesId query parameter not found in URL.');",
+									"    }",
+									"} else {",
+									"    console.log('INFO: species_id is not set in environment. Running \"Get Species (Public)\" first will automatically set it.');",
+									"    console.log('INFO: If speciesId is not provided, all breeds will be returned.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"url": {
@@ -760,12 +941,12 @@
 								{
 									"key": "speciesId",
 									"value": "",
-									"description": "Optional: Filter breeds by species ID"
+									"description": "Optional: Filter breeds by species ID - automatically populated from species_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Get all available pet breeds. If speciesId is provided, returns breeds for that species only. This is a public endpoint (no authentication required).",
+							"content": "Get all available pet breeds. If speciesId is provided, returns breeds for that species only. This is a public endpoint (no authentication required).\n\nThe `speciesId` query parameter is automatically set from the first species ID returned by \"Get Species (Public)\" (if species exist). If not set, all breeds will be returned.\n\n## Response\nReturns an array of pet breeds. If no breeds are found, returns an empty array `[]`.\n\n### Array Item Structure\nEach item in the array has the following structure:\n```typescript\n{\n  id: string;                    // Breed UUID\n  name: string;                 // Breed name (e.g., 'Golden Retriever', 'Persian')\n  species_id: string;           // Species UUID\n  code: string | null;          // Breed code (optional)\n  is_active: boolean;           // Whether the breed is active\n  display_order: number | null; // Display order for sorting (optional)\n  created_at: string;           // ISO 8601 timestamp\n  updated_at: string;            // ISO 8601 timestamp\n  // ... other fields from pet_breeds table\n}\n```",
 							"type": "text/markdown"
 						}
 					},
@@ -884,6 +1065,32 @@
 				},
 				{
 					"name": "Get Pet by ID",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set pet id from environment variable",
+									"const petId = pm.environment.get('pet_id');",
+									"if (petId && petId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const petIdVar = url.variables.get('id');",
+									"    if (petIdVar) {",
+									"        petIdVar.value = petId;",
+									"        console.log('pet id automatically set to:', petId);",
+									"    } else {",
+									"        console.error('ERROR: id variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: pet_id is not set in environment.');",
+									"    console.error('Please run \"Get All Pets\" first to automatically extract a pet ID.');",
+									"    console.error('Or manually set the pet_id environment variable with a valid pet UUID.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -907,12 +1114,12 @@
 								{
 									"key": "id",
 									"value": "",
-									"description": "Pet UUID"
+									"description": "Pet UUID - automatically populated from pet_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Get a single pet by ID.",
+							"content": "Get a single pet by ID. The `id` parameter is automatically set from the first pet ID returned by \"Get All Pets\".",
 							"type": "text/markdown"
 						}
 					},
@@ -920,6 +1127,28 @@
 				},
 				{
 					"name": "Get Pet with Owner",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set pet id from environment variable",
+									"const petId = pm.environment.get('pet_id');",
+									"if (petId && petId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const petIdVar = url.variables.get('id');",
+									"    if (petIdVar) {",
+									"        petIdVar.value = petId;",
+									"        console.log('pet id automatically set to:', petId);",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: pet_id is not set. Run \"Get All Pets\" first.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -949,7 +1178,7 @@
 							]
 						},
 						"description": {
-							"content": "Get a pet with owner/client information included.",
+							"content": "Get a pet with owner/client information included. The `id` parameter is automatically set from the first pet ID returned by \"Get All Pets\".",
 							"type": "text/markdown"
 						}
 					},
@@ -957,6 +1186,28 @@
 				},
 				{
 					"name": "Get Pet Medical Records",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set pet id from environment variable",
+									"const petId = pm.environment.get('pet_id');",
+									"if (petId && petId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const petIdVar = url.variables.get('id');",
+									"    if (petIdVar) {",
+									"        petIdVar.value = petId;",
+									"        console.log('pet id automatically set to:', petId);",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: pet_id is not set. Run \"Get All Pets\" first.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -993,7 +1244,7 @@
 							]
 						},
 						"description": {
-							"content": "Get medical records for a pet.",
+							"content": "Get medical records for a pet. The `id` parameter is automatically set from the first pet ID returned by \"Get All Pets\".\n\n## Response\nReturns an array of medical records. If the pet has no medical records, returns an empty array `[]`.\n\n### Array Item Structure\nEach item in the array has the following structure (all fields from `medical_records` table):\n```typescript\n{\n  id: string;                    // Medical record UUID\n  pet_id: string;               // Pet UUID\n  record_type: string;          // Type of medical record\n  title: string | null;         // Record title (optional)\n  content: string | null;       // Record content (optional)\n  date: string | null;          // ISO 8601 date (optional)\n  created_at: string;           // ISO 8601 timestamp\n  updated_at: string;           // ISO 8601 timestamp\n  // ... other fields from medical_records table\n}\n```",
 							"type": "text/markdown"
 						}
 					},
@@ -1001,6 +1252,28 @@
 				},
 				{
 					"name": "Get Pet Appointments",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set pet id from environment variable",
+									"const petId = pm.environment.get('pet_id');",
+									"if (petId && petId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const petIdVar = url.variables.get('id');",
+									"    if (petIdVar) {",
+									"        petIdVar.value = petId;",
+									"        console.log('pet id automatically set to:', petId);",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: pet_id is not set. Run \"Get All Pets\" first.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -1037,7 +1310,7 @@
 							]
 						},
 						"description": {
-							"content": "Get appointments for a pet.",
+							"content": "Get appointments for a pet. The `id` parameter is automatically set from the first pet ID returned by \"Get All Pets\".\n\n## Response\nReturns an array of appointments. If the pet has no appointments, returns an empty array `[]`.\n\n### Array Item Structure\nEach item in the array has the following structure (all fields from `appointments` table):\n```typescript\n{\n  id: string;                    // Appointment UUID\n  appointment_time: string;     // ISO 8601 timestamp\n  service_type: string;         // Service type (e.g., 'Consultation', 'Surgery')\n  status: string;               // Appointment status\n  payment_status: string;       // Payment status\n  symptoms: string | null;      // Symptoms (optional)\n  notes: string | null;        // Notes (optional)\n  pet_id: string;              // Pet UUID\n  client_id: string;           // Client UUID\n  vet_id: string | null;       // Veterinarian UUID (optional)\n  tenant_id: string;           // Clinic UUID\n  created_at: string;          // ISO 8601 timestamp\n  updated_at: string;           // ISO 8601 timestamp\n  // ... other fields from appointments table\n}\n```",
 							"type": "text/markdown"
 						}
 					},
@@ -1045,6 +1318,28 @@
 				},
 				{
 					"name": "Get Pet Vaccinations",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set pet id from environment variable",
+									"const petId = pm.environment.get('pet_id');",
+									"if (petId && petId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const petIdVar = url.variables.get('id');",
+									"    if (petIdVar) {",
+									"        petIdVar.value = petId;",
+									"        console.log('pet id automatically set to:', petId);",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: pet_id is not set. Run \"Get All Pets\" first.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -1069,12 +1364,12 @@
 								{
 									"key": "id",
 									"value": "",
-									"description": "Pet UUID"
+									"description": "Pet UUID - automatically populated from pet_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Get vaccinations for a pet.",
+							"content": "Get vaccinations for a pet. The `id` parameter is automatically set from the first pet ID returned by \"Get All Pets\".\n\n## Response\nReturns an array of vaccinations. If the pet has no vaccinations, returns an empty array `[]`.\n\n**Note:** If the vaccinations table does not exist in the database, this endpoint will return a `400 Bad Request` error.\n\n### Array Item Structure\nEach item in the array has the following structure (all fields from `vaccinations` table):\n```typescript\n{\n  id: string;                    // Vaccination UUID\n  pet_id: string;               // Pet UUID\n  vaccine_name: string;         // Name of the vaccine\n  date_administered: string;    // ISO 8601 date when vaccine was administered\n  expiration_date: string | null; // ISO 8601 date when vaccine expires (optional)\n  batch_number: string | null;  // Vaccine batch number (optional)\n  veterinarian: string | null;   // Veterinarian who administered (optional)\n  clinic: string | null;        // Clinic where administered (optional)\n  created_at: string;           // ISO 8601 timestamp\n  updated_at: string;          // ISO 8601 timestamp\n  // ... other fields from vaccinations table\n}\n```",
 							"type": "text/markdown"
 						}
 					},
@@ -1082,6 +1377,28 @@
 				},
 				{
 					"name": "Get Pet Medications",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set pet id from environment variable",
+									"const petId = pm.environment.get('pet_id');",
+									"if (petId && petId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const petIdVar = url.variables.get('id');",
+									"    if (petIdVar) {",
+									"        petIdVar.value = petId;",
+									"        console.log('pet id automatically set to:', petId);",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: pet_id is not set. Run \"Get All Pets\" first.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -1111,7 +1428,7 @@
 							]
 						},
 						"description": {
-							"content": "Get medications for a pet.",
+							"content": "Get medications for a pet. The `id` parameter is automatically set from the first pet ID returned by \"Get All Pets\".\n\n## Response\nReturns an array of medications. If the pet has no medications, returns an empty array `[]`.\n\n**Note:** If the medications table does not exist in the database, this endpoint will return a `400 Bad Request` error.\n\n### Array Item Structure\nEach item in the array has the following structure (all fields from `medications` table):\n```typescript\n{\n  id: string;                    // Medication UUID\n  pet_id: string;               // Pet UUID\n  medication_name: string;       // Name of the medication\n  dosage: string | null;        // Dosage information (optional)\n  frequency: string | null;     // Frequency of administration (optional)\n  start_date: string | null;    // ISO 8601 date when medication started (optional)\n  end_date: string | null;      // ISO 8601 date when medication ends (optional)\n  prescribed_by: string | null; // Veterinarian who prescribed (optional)\n  notes: string | null;         // Additional notes (optional)\n  created_at: string;           // ISO 8601 timestamp\n  updated_at: string;           // ISO 8601 timestamp\n  // ... other fields from medications table\n}\n```",
 							"type": "text/markdown"
 						}
 					},
@@ -1161,6 +1478,28 @@
 				},
 				{
 					"name": "Update Pet",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set pet id from environment variable",
+									"const petId = pm.environment.get('pet_id');",
+									"if (petId && petId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const petIdVar = url.variables.get('id');",
+									"    if (petIdVar) {",
+									"        petIdVar.value = petId;",
+									"        console.log('pet id automatically set to:', petId);",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: pet_id is not set. Run \"Get All Pets\" first.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "PATCH",
 						"header": [
@@ -1203,7 +1542,7 @@
 							]
 						},
 						"description": {
-							"content": "Update an existing pet. All fields are optional - only include fields you want to update.",
+							"content": "Update an existing pet. All fields are optional - only include fields you want to update.\n\nThe `id` parameter is automatically set from the first pet ID returned by \"Get All Pets\".",
 							"type": "text/markdown"
 						}
 					},
@@ -1211,6 +1550,28 @@
 				},
 				{
 					"name": "Delete Pet",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set pet id from environment variable",
+									"const petId = pm.environment.get('pet_id');",
+									"if (petId && petId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const petIdVar = url.variables.get('id');",
+									"    if (petIdVar) {",
+									"        petIdVar.value = petId;",
+									"        console.log('pet id automatically set to:', petId);",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: pet_id is not set. Run \"Get All Pets\" first.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "DELETE",
 						"header": [
@@ -1239,7 +1600,7 @@
 							]
 						},
 						"description": {
-							"content": "Delete a pet.",
+							"content": "Delete a pet. The `id` parameter is automatically set from the first pet ID returned by \"Get All Pets\".",
 							"type": "text/markdown"
 						}
 					},
@@ -1304,13 +1665,13 @@
 							"query": [
 								{
 									"key": "startDate",
-									"value": "",
-									"description": "Optional: Start date filter (ISO format)"
+									"value": "2024-12-01T00:00:00Z",
+									"description": "Optional: Start date filter (ISO 8601 format, e.g., 2024-12-01T00:00:00Z). Filters appointments with appointment_time >= startDate."
 								},
 								{
 									"key": "endDate",
-									"value": "",
-									"description": "Optional: End date filter (ISO format)"
+									"value": "2024-12-31T23:59:59Z",
+									"description": "Optional: End date filter (ISO 8601 format, e.g., 2024-12-31T23:59:59Z). Filters appointments with appointment_time <= endDate."
 								}
 							],
 							"variable": [
@@ -1322,10 +1683,38 @@
 							]
 						},
 						"description": {
-							"content": "Get appointments for a clinic, optionally filtered by date range.",
+							"content": "Get appointments for a clinic, optionally filtered by date range.\n\n## Query Parameters:\n\n### `startDate` (optional)\nISO 8601 format date/time string. Filters appointments where `appointment_time >= startDate`.\n\n**Format:** `YYYY-MM-DDTHH:mm:ssZ` or `YYYY-MM-DDTHH:mm:ss.sssZ`\n\n### `endDate` (optional)\nISO 8601 format date/time string. Filters appointments where `appointment_time <= endDate`.\n\n**Format:** `YYYY-MM-DDTHH:mm:ssZ` or `YYYY-MM-DDTHH:mm:ss.sssZ`\n\n## Sample Data for Frontend Developers:\n\n### Example 1: Get appointments for current month\n```\nGET {{baseUrl}}/api/appointments/clinic/{{clinic_id}}?startDate=2024-12-01T00:00:00Z&endDate=2024-12-31T23:59:59Z\n```\n- `startDate`: `2024-12-01T00:00:00Z`\n- `endDate`: `2024-12-31T23:59:59Z`\n\n### Example 2: Get appointments for today\n```\nGET {{baseUrl}}/api/appointments/clinic/{{clinic_id}}?startDate=2024-12-02T00:00:00Z&endDate=2024-12-02T23:59:59Z\n```\n- `startDate`: `2024-12-02T00:00:00Z` (today at midnight UTC)\n- `endDate`: `2024-12-02T23:59:59Z` (today at end of day UTC)\n\n### Example 3: Get appointments for this week (Monday to Sunday)\n```\nGET {{baseUrl}}/api/appointments/clinic/{{clinic_id}}?startDate=2024-12-02T00:00:00Z&endDate=2024-12-08T23:59:59Z\n```\n- `startDate`: `2024-12-02T00:00:00Z` (Monday at midnight)\n- `endDate`: `2024-12-08T23:59:59Z` (Sunday at end of day)\n\n### Example 4: Get appointments for a specific date range\n```\nGET {{baseUrl}}/api/appointments/clinic/{{clinic_id}}?startDate=2024-12-15T08:00:00Z&endDate=2024-12-20T17:00:00Z\n```\n- `startDate`: `2024-12-15T08:00:00Z` (December 15, 2024 at 8:00 AM UTC)\n- `endDate`: `2024-12-20T17:00:00Z` (December 20, 2024 at 5:00 PM UTC)\n\n### Example 5: Get all appointments (no date filter)\n```\nGET {{baseUrl}}/api/appointments/clinic/{{clinic_id}}\n```\n- Both `startDate` and `endDate` are optional. Omit them to get all appointments.\n\n## JavaScript/TypeScript Code Examples:\n\n### Using native Date:\n```javascript\nconst startDate = new Date('2024-12-01').toISOString(); // 2024-12-01T00:00:00.000Z\nconst endDate = new Date('2024-12-31').toISOString();   // 2024-12-31T00:00:00.000Z\n```\n\n### Using date-fns:\n```javascript\nimport { formatISO, startOfMonth, endOfMonth } from 'date-fns';\n\nconst today = new Date();\nconst startDate = formatISO(startOfMonth(today)); // First day of month at 00:00:00\nconst endDate = formatISO(endOfMonth(today));     // Last day of month at 23:59:59\n```\n\n### Using moment.js:\n```javascript\nimport moment from 'moment';\n\nconst startDate = moment().startOf('month').toISOString();\nconst endDate = moment().endOf('month').toISOString();\n```\n\n## Important Notes:\n\n- Both parameters are **optional**. If omitted, all appointments for the clinic will be returned.\n- Dates should be in **UTC timezone** (use `Z` suffix) or specify timezone offset (e.g., `+00:00`).\n- The comparison is done on the `appointment_time` field in the database.\n- `startDate` uses `>=` (greater than or equal) comparison.\n- `endDate` uses `<=` (less than or equal) comparison.\n\n## Response\nReturns an array of appointments. If no appointments are found, returns an empty array `[]`.\n\n### Array Item Structure\nEach item in the array has the following structure:\n```typescript\n{\n  id: string;                    // Appointment UUID\n  appointment_time: string;     // ISO 8601 timestamp\n  service_type: string;         // Service type (e.g., 'Consultation', 'Surgery')\n  status: string;               // Appointment status\n  payment_status: string;       // Payment status\n  symptoms: string | null;      // Symptoms (optional)\n  notes: string | null;        // Notes (optional)\n  client_notes: string | null; // Client notes (optional)\n  reason_for_consultation: string | null; // Reason (optional)\n  estimated_duration: number | null; // Duration in minutes (optional)\n  emergency_level: string | null; // Emergency level (optional)\n  is_telehealth: boolean;      // Whether it's a telehealth appointment\n  pet_id: string | null;        // Pet UUID (optional)\n  client_id: string;           // Client UUID\n  vet_id: string | null;       // Veterinarian UUID (optional)\n  tenant_id: string;           // Clinic UUID\n  created_at: string;           // ISO 8601 timestamp\n  updated_at: string;           // ISO 8601 timestamp\n  // ... other fields from appointments table\n}\n```",
 							"type": "text/markdown"
 						}
 					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically extract appointment ID from response",
+									"if (pm.response.code === 200) {",
+									"    try {",
+									"        const response = pm.response.json();",
+									"        if (Array.isArray(response) && response.length > 0) {",
+									"            const firstAppointment = response[0];",
+									"            if (firstAppointment.id) {",
+									"                pm.environment.set('appointment_id', firstAppointment.id);",
+									"                console.log('appointment_id automatically set to:', firstAppointment.id);",
+									"            }",
+									"        } else {",
+									"            pm.environment.unset('appointment_id');",
+									"            console.log('No appointments found. appointment_id unset.');",
+									"        }",
+									"    } catch (e) {",
+									"        console.error('Error parsing response:', e);",
+									"    }",
+									"}"
+								]
+							}
+						}
+					],
 					"response": []
 				},
 				{
@@ -1374,6 +1763,32 @@
 				},
 				{
 					"name": "Get Appointments by Pet",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set petId from environment variable (set by Get All Pets)",
+									"const petId = pm.environment.get('pet_id');",
+									"if (petId && petId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const petIdVar = url.variables.get('petId');",
+									"    if (petIdVar) {",
+									"        petIdVar.value = petId;",
+									"        console.log('Pet id automatically set to:', petId);",
+									"    } else {",
+									"        console.error('ERROR: petId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: pet_id is not set in environment.');",
+									"    console.error('Please call GET /api/pets first to set the pet_id.');",
+									"    console.error('The pet_id is automatically stored when you call Get All Pets.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -1398,7 +1813,7 @@
 								{
 									"key": "petId",
 									"value": "",
-									"description": "Pet UUID"
+									"description": "Pet UUID - Automatically populated from pet_id environment variable"
 								}
 							]
 						},
@@ -1576,6 +1991,28 @@
 				},
 				{
 					"name": "Get Appointment by ID",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set appointment id from environment variable",
+									"const appointmentId = pm.environment.get('appointment_id');",
+									"if (appointmentId && appointmentId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const idVar = url.variables.get('id');",
+									"    if (idVar) {",
+									"        idVar.value = appointmentId;",
+									"        console.log('appointment id automatically set to:', appointmentId);",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: appointment_id is not set. Run \"Get Appointments by Clinic\" first.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -1599,12 +2036,12 @@
 								{
 									"key": "id",
 									"value": "",
-									"description": "Appointment UUID"
+									"description": "Appointment UUID - automatically populated from appointment_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Get a single appointment by ID.",
+							"content": "Get a single appointment by ID. The `id` parameter is automatically set from the first appointment ID returned by \"Get Appointments by Clinic\".",
 							"type": "text/markdown"
 						}
 					},
@@ -1628,7 +2065,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"clinic_id\": \"{{clinic_id}}\",\n  \"appointment_time\": \"2024-12-20T10:00:00Z\",\n  \"service_type\": \"Consultation\",\n  \"pet_id\": \"\",\n  \"client_id\": \"{{client_id}}\",\n  \"vet_id\": \"\",\n  \"status\": \"scheduled\",\n  \"symptoms\": \"Lethargy and loss of appetite\",\n  \"notes\": \"Follow-up appointment\",\n  \"client_notes\": \"Please bring vaccination records\",\n  \"reason_for_consultation\": \"Routine checkup\",\n  \"estimated_duration\": 30,\n  \"emergency_level\": \"medium\",\n  \"is_telehealth\": false\n}",
+							"raw": "{\n  \"clinic_id\": \"{{clinic_id}}\",\n  \"appointment_time\": \"2024-12-20T10:00:00Z\",\n  \"service_type\": \"Consultation\",\n  \"client_id\": \"{{client_id}}\",\n  \"status\": \"scheduled\",\n  \"symptoms\": \"Lethargy and loss of appetite\",\n  \"notes\": \"Follow-up appointment\",\n  \"client_notes\": \"Please bring vaccination records\",\n  \"reason_for_consultation\": \"Routine checkup\",\n  \"estimated_duration\": 30,\n  \"emergency_level\": \"medium\",\n  \"is_telehealth\": false\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -1646,7 +2083,7 @@
 							]
 						},
 						"description": {
-							"content": "Create a new appointment.\n\n## Required Fields:\n- `clinic_id` (UUID) - Clinic ID - **REQUIRED**\n- `appointment_time` (date string) - Appointment date/time in ISO format - **REQUIRED**\n- `service_type` (string) - Service type - **REQUIRED**\n\n## Optional Fields:\n- `pet_id` (UUID) - Pet ID (optional for Block appointments)\n- `client_id` (UUID) - Client ID (optional for Block appointments)\n- `vet_id` (UUID) - Veterinarian ID\n- `organization_id` (UUID) - Organization ID\n- `status` (enum) - One of: requested, scheduled, checked_in, in_progress, completed, cancelled, no_show\n- `symptoms` (string) - Symptoms description\n- `notes` (string) - Internal notes\n- `client_notes` (string) - Notes visible to client\n- `reason_for_consultation` (string) - Reason for consultation\n- `estimated_duration` (number) - Estimated duration in minutes\n- `emergency_level` (enum) - One of: low, medium, high, critical\n- `is_telehealth` (boolean) - Whether it's a telehealth appointment\n- `booking_reference` (string) - Booking reference number\n- `payment_status` (string) - Payment status\n- `payment_reference` (string) - Payment reference",
+							"content": "Create a new appointment.\n\n## Required Fields:\n- `clinic_id` (UUID) - Clinic ID - **REQUIRED**\n- `appointment_time` (date string) - Appointment date/time in ISO format - **REQUIRED**\n- `service_type` (string) - Service type - **REQUIRED**\n\n## Optional Fields:\n- `pet_id` (UUID) - Pet ID (optional for Block appointments). **Note:** Omit this field entirely if not needed, do NOT send empty string `\"\"`.\n- `client_id` (UUID) - Client ID (optional for Block appointments). **Note:** Omit this field entirely if not needed, do NOT send empty string `\"\"`.\n- `vet_id` (UUID) - Veterinarian ID. **Note:** Omit this field entirely if not needed, do NOT send empty string `\"\"`.\n- `organization_id` (UUID) - Organization ID. **Note:** Omit this field entirely if not needed, do NOT send empty string `\"\"`.\n- `status` (enum) - One of: requested, scheduled, checked_in, in_progress, completed, cancelled, no_show\n- `symptoms` (string) - Symptoms description\n- `notes` (string) - Internal notes\n- `client_notes` (string) - Notes visible to client\n- `reason_for_consultation` (string) - Reason for consultation\n- `estimated_duration` (number) - Estimated duration in minutes\n- `emergency_level` (enum) - One of: low, medium, high, critical\n- `is_telehealth` (boolean) - Whether it's a telehealth appointment\n- `booking_reference` (string) - Booking reference number\n- `payment_status` (string) - Payment status\n- `payment_reference` (string) - Payment reference number\n\n**Important:** For optional UUID fields (`pet_id`, `client_id`, `vet_id`, `organization_id`), either provide a valid UUID or omit the field completely. Do NOT send empty strings `\"\"` as they will cause validation errors.",
 							"type": "text/markdown"
 						}
 					},
@@ -1654,6 +2091,28 @@
 				},
 				{
 					"name": "Update Appointment",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set appointment id from environment variable",
+									"const appointmentId = pm.environment.get('appointment_id');",
+									"if (appointmentId && appointmentId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const idVar = url.variables.get('id');",
+									"    if (idVar) {",
+									"        idVar.value = appointmentId;",
+									"        console.log('appointment id automatically set to:', appointmentId);",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: appointment_id is not set. Run \"Get Appointments by Clinic\" first.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "PATCH",
 						"header": [
@@ -1691,12 +2150,12 @@
 								{
 									"key": "id",
 									"value": "",
-									"description": "Appointment UUID"
+									"description": "Appointment UUID - automatically populated from appointment_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Update an appointment. All fields are optional - only include fields you want to update.",
+							"content": "Update an appointment. All fields are optional - only include fields you want to update. The `id` parameter is automatically set from the first appointment ID returned by \"Get Appointments by Clinic\".",
 							"type": "text/markdown"
 						}
 					},
@@ -1704,6 +2163,28 @@
 				},
 				{
 					"name": "Update Appointment Status",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set appointment id from environment variable",
+									"const appointmentId = pm.environment.get('appointment_id');",
+									"if (appointmentId && appointmentId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const idVar = url.variables.get('id');",
+									"    if (idVar) {",
+									"        idVar.value = appointmentId;",
+									"        console.log('appointment id automatically set to:', appointmentId);",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: appointment_id is not set. Run \"Get Appointments by Clinic\" first.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "PATCH",
 						"header": [
@@ -1742,12 +2223,12 @@
 								{
 									"key": "id",
 									"value": "",
-									"description": "Appointment UUID"
+									"description": "Appointment UUID - automatically populated from appointment_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Update appointment status.\n\n## Required Fields:\n- `status` (enum) - New status - **REQUIRED** (requested, scheduled, checked_in, in_progress, completed, cancelled, no_show)\n\n## Optional Fields:\n- `vetId` (UUID) - Veterinarian ID\n- `notes` (string) - Status change notes",
+							"content": "Update appointment status. The `id` parameter is automatically set from the first appointment ID returned by \"Get Appointments by Clinic\".\n\n## Required Fields:\n- `status` (enum) - New status - **REQUIRED** (requested, scheduled, checked_in, in_progress, completed, cancelled, no_show)\n\n## Optional Fields:\n- `vetId` (UUID) - Veterinarian ID. **Note:** Omit this field entirely if not needed, do NOT send empty string `\"\"`.\n- `notes` (string) - Status change notes",
 							"type": "text/markdown"
 						}
 					},
@@ -1755,6 +2236,28 @@
 				},
 				{
 					"name": "Delete Appointment",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set appointment id from environment variable",
+									"const appointmentId = pm.environment.get('appointment_id');",
+									"if (appointmentId && appointmentId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const idVar = url.variables.get('id');",
+									"    if (idVar) {",
+									"        idVar.value = appointmentId;",
+									"        console.log('appointment id automatically set to:', appointmentId);",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: appointment_id is not set. Run \"Get Appointments by Clinic\" first.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "DELETE",
 						"header": [
@@ -1778,12 +2281,12 @@
 								{
 									"key": "id",
 									"value": "",
-									"description": "Appointment UUID"
+									"description": "Appointment UUID - automatically populated from appointment_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Delete an appointment.",
+							"content": "Delete an appointment. The `id` parameter is automatically set from the first appointment ID returned by \"Get Appointments by Clinic\".",
 							"type": "text/markdown"
 						}
 					},
@@ -1891,6 +2394,41 @@
 				},
 				{
 					"name": "Get All Users",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically extract user IDs for use in Bulk Delete/Update requests",
+									"if (pm.response.code === 200) {",
+									"    const users = pm.response.json();",
+									"    if (Array.isArray(users) && users.length > 0) {",
+									"        // Extract all user IDs",
+									"        const userIds = users.map(user => user.id).filter(Boolean);",
+									"        if (userIds.length > 0) {",
+									"            // Store as JSON array string",
+									"            pm.environment.set('user_ids', JSON.stringify(userIds));",
+									"            console.log('user_ids automatically set. Total users:', userIds.length);",
+									"            console.log('First 3 user IDs:', userIds.slice(0, 3));",
+									"            ",
+									"            pm.test('User IDs extracted', function () {",
+									"                pm.expect(userIds).to.be.an('array');",
+									"                pm.expect(userIds.length).to.be.greaterThan(0);",
+									"            });",
+									"        } else {",
+									"            console.log('No valid user IDs found in response');",
+									"            pm.environment.unset('user_ids');",
+									"        }",
+									"    } else {",
+									"        console.log('No users found in response - user_ids not set');",
+									"        pm.environment.unset('user_ids');",
+									"    }",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -1911,7 +2449,7 @@
 							]
 						},
 						"description": {
-							"content": "Get all users for the authenticated user's organization/clinic.",
+							"content": "Get all users for the authenticated user's organization/clinic. User IDs are automatically extracted and stored for use in \"Bulk Delete Users\" and \"Bulk Update Users\" endpoints.\n\n## Response\nReturns an array of users. If no users are found, returns an empty array `[]`.\n\n### Array Item Structure\nEach item in the array has the following structure:\n```typescript\n{\n  id: string;                    // User UUID (from users table)\n  auth_user_id: string;          // Supabase auth user ID\n  email: string;                 // User email\n  full_name: string;             // User's full name\n  first_name: string;           // User's first name\n  last_name: string;            // User's last name\n  role: string;                  // User role (e.g., 'veterinarian', 'clinic_admin')\n  role_id: string | null;        // Custom role ID (if applicable)\n  role_name: string | null;      // Custom role name (if applicable)\n  organization_id: string;       // Organization UUID\n  clinic_id: string;            // Clinic UUID\n  status: string;               // User status (e.g., 'active', 'inactive')\n  created_at: string;            // ISO 8601 timestamp\n  has_set_password: boolean;    // Whether user has set a password\n  organizations: {               // Organization details (nested object)\n    id: string;\n    name: string;\n  } | null;\n  clinics: {                     // Clinic details (nested object)\n    id: string;\n    name: string;\n  } | null;\n}\n```",
 							"type": "text/markdown"
 						}
 					},
@@ -1940,7 +2478,7 @@
 							]
 						},
 						"description": {
-							"content": "Get all users in the authenticated user's organization.",
+							"content": "Get all users in the authenticated user's organization.\n\n## Response\nReturns an array of users. If no users are found, returns an empty array `[]`.\n\n**Note:** This endpoint excludes users who are already clients (checks the `clients` table).\n\n### Array Item Structure\nEach item in the array has the same structure as \"Get All Users\" endpoint. See that endpoint's documentation for the complete structure.",
 							"type": "text/markdown"
 						}
 					},
@@ -2090,6 +2628,24 @@
 				},
 				{
 					"name": "Get User by Auth User ID",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set authUserId from environment variable",
+									"const authUserId = pm.environment.get('auth_user_id');",
+									"if (authUserId) {",
+									"    pm.request.url.variables.get('authUserId').value = authUserId;",
+									"    console.log('authUserId automatically set to:', authUserId);",
+									"} else {",
+									"    console.error('auth_user_id not found in environment. Please ensure you have authenticated first.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -2114,12 +2670,12 @@
 								{
 									"key": "authUserId",
 									"value": "",
-									"description": "Supabase auth user ID (must match authenticated user)"
+									"description": "Supabase auth user ID - Automatically populated from auth_user_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Get user by Supabase auth user ID. **Note:** The authUserId must match the authenticated user's auth_user_id, otherwise access will be denied.",
+							"content": "Get user by Supabase auth user ID. **Note:** The authUserId is automatically populated from the JWT token (extracted from the `sub` field). The authUserId must match the authenticated user's auth_user_id, otherwise access will be denied.",
 							"type": "text/markdown"
 						}
 					},
@@ -2127,6 +2683,55 @@
 				},
 				{
 					"name": "Get User by ID",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set id from environment variable",
+									"const userId = pm.environment.get('user_id');",
+									"if (userId && userId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const idVar = url.variables.get('id');",
+									"    if (idVar) {",
+									"        idVar.value = userId;",
+									"        console.log('User id automatically set to:', userId);",
+									"    } else {",
+									"        console.error('ERROR: id variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: user_id is not set in environment.');",
+									"    console.error('The user_id should be automatically set by the pre-request script when fetching the token.');",
+									"    console.error('If this error persists, please check your Supabase credentials and ensure /api/users/me returns a valid user profile.');",
+									"}"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Store the user ID from the response for use in restore/permanent delete endpoints",
+									"if (pm.response.code === 200) {",
+									"    try {",
+									"        const responseJson = pm.response.json();",
+									"        if (responseJson && responseJson.id) {",
+									"            pm.environment.set('target_user_id', responseJson.id);",
+									"            console.log('target_user_id stored:', responseJson.id);",
+									"            if (responseJson.status === 'deleted') {",
+									"                console.log('User is deleted. You can now use Restore User or Permanent Delete User endpoints.');",
+									"            }",
+									"        }",
+									"    } catch (e) {",
+									"        console.error('Error parsing response:', e);",
+									"    }",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -2150,12 +2755,12 @@
 								{
 									"key": "id",
 									"value": "",
-									"description": "User UUID"
+									"description": "User UUID - Automatically populated from user_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Get a single user by ID.",
+							"content": "Get a single user by ID. The `id` parameter is automatically set from the authenticated user's ID (from `/api/users/me`).\n\n**Note:** The user ID from the response is automatically stored in `target_user_id` environment variable. This can be used by the Restore User and Permanent Delete User endpoints.",
 							"type": "text/markdown"
 						}
 					},
@@ -2192,7 +2797,7 @@
 							]
 						},
 						"description": {
-							"content": "Get licensed states for a user.",
+							"content": "Get licensed states for a user.\n\n## Response\nReturns an array of licensed states. If the user has no licensed states, returns an empty array `[]`.\n\n### Array Item Structure\nEach item in the array has the following structure:\n```typescript\n{\n  id: string;              // Licensed state record UUID\n  user_id: string;         // User UUID\n  state_id: string;        // State UUID\n  state_code: string;      // State code (e.g., 'CA', 'NY')\n  created_at: string;      // ISO 8601 timestamp\n  state: {                 // State details (nested object)\n    id: string;            // State UUID\n    code: string;          // State code\n    name: string;          // State name (e.g., 'California')\n  }\n}\n```",
 							"type": "text/markdown"
 						}
 					},
@@ -2200,6 +2805,41 @@
 				},
 				{
 					"name": "Get States",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically extract state IDs for use in Update User Licensed States",
+									"if (pm.response.code === 200) {",
+									"    const states = pm.response.json();",
+									"    if (Array.isArray(states) && states.length > 0) {",
+									"        // Extract all state IDs",
+									"        const stateIds = states.map(state => state.id).filter(Boolean);",
+									"        if (stateIds.length > 0) {",
+									"            // Store as JSON array string",
+									"            pm.environment.set('state_ids', JSON.stringify(stateIds));",
+									"            console.log('state_ids automatically set. Total states:', stateIds.length);",
+									"            console.log('First 3 state IDs:', stateIds.slice(0, 3));",
+									"            ",
+									"            pm.test('State IDs extracted', function () {",
+									"                pm.expect(stateIds).to.be.an('array');",
+									"                pm.expect(stateIds.length).to.be.greaterThan(0);",
+									"            });",
+									"        } else {",
+									"            console.log('No valid state IDs found in response');",
+									"            pm.environment.unset('state_ids');",
+									"        }",
+									"    } else {",
+									"        console.log('No states found in response - state_ids not set');",
+									"        pm.environment.unset('state_ids');",
+									"    }",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -2221,7 +2861,7 @@
 							]
 						},
 						"description": {
-							"content": "Get all available states.",
+							"content": "Get all available states. State IDs are automatically extracted and stored for use in \"Update User Licensed States\" endpoint.\n\n## Response\nReturns an array of states. If no states are found, returns an empty array `[]`.\n\n### Array Item Structure\nEach item in the array has the following structure:\n```typescript\n{\n  id: string;                    // State UUID\n  code: string;                 // State code (e.g., 'CA', 'NY', 'TX')\n  name: string;                 // State name (e.g., 'California', 'New York', 'Texas')\n}\n```",
 							"type": "text/markdown"
 						}
 					},
@@ -2271,6 +2911,24 @@
 				},
 				{
 					"name": "Create User Schedule",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set userId from environment variable",
+									"const userId = pm.environment.get('user_id');",
+									"if (userId) {",
+									"    pm.request.url.variables.get('userId').value = userId;",
+									"    console.log('userId automatically set to:', userId);",
+									"} else {",
+									"    console.error('user_id not found in environment. Please ensure you have called GET /api/users/me first.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "POST",
 						"header": [
@@ -2309,12 +2967,12 @@
 								{
 									"key": "userId",
 									"value": "",
-									"description": "User UUID"
+									"description": "User UUID - Automatically populated from user_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Create a schedule for a user.\n\n## Required Fields:\n- `availability_days` (array of strings) - Days of week - **REQUIRED**\n- `availability_hours_start` (string) - Start time (HH:mm) - **REQUIRED**\n- `availability_hours_end` (string) - End time (HH:mm) - **REQUIRED**\n- `break_times` (array of objects) - Break times - **REQUIRED**\n  - `days` (array of strings) - Days for break\n  - `hour_start` (string) - Break start time\n  - `hour_end` (string) - Break end time\n- `services_offered` (array of strings) - Services offered - **REQUIRED**\n\n## Optional Fields:\n- `color` (string) - Calendar color\n- `additionals` (object) - Additional settings",
+							"content": "Create a schedule for a user. The `userId` parameter is automatically set from the authenticated user's ID (from `/api/users/me`).\n\n## Required Fields:\n- `availability_days` (array of strings) - Days of week - **REQUIRED**\n- `availability_hours_start` (string) - Start time (HH:mm) - **REQUIRED**\n- `availability_hours_end` (string) - End time (HH:mm) - **REQUIRED**\n- `break_times` (array of objects) - Break times - **REQUIRED**\n  - `days` (array of strings) - Days for break\n  - `hour_start` (string) - Break start time\n  - `hour_end` (string) - Break end time\n- `services_offered` (array of strings) - Services offered - **REQUIRED**\n\n## Optional Fields:\n- `color` (string) - Calendar color\n- `additionals` (object) - Additional settings",
 							"type": "text/markdown"
 						}
 					},
@@ -2474,6 +3132,52 @@
 				},
 				{
 					"name": "Update User Licensed States",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set userId from environment variable",
+									"const userId = pm.environment.get('user_id');",
+									"if (userId) {",
+									"    pm.request.url.variables.get('id').value = userId;",
+									"    console.log('User id automatically set to:', userId);",
+									"} else {",
+									"    console.error('user_id not found in environment. Please ensure you have called GET /api/users/me first.');",
+									"}",
+									"",
+									"// Automatically populate stateIds from Get States response",
+									"const stateIdsJson = pm.environment.get('state_ids');",
+									"if (stateIdsJson) {",
+									"    try {",
+									"        const stateIds = JSON.parse(stateIdsJson);",
+									"        if (Array.isArray(stateIds) && stateIds.length > 0) {",
+									"            // Get first 2 state IDs as example (you can modify this logic)",
+									"            const selectedStateIds = stateIds.slice(0, 2);",
+									"            ",
+									"            // Update request body",
+									"            const body = {",
+									"                stateIds: selectedStateIds",
+									"            };",
+									"            pm.request.body.raw = JSON.stringify(body, null, 2);",
+									"            ",
+									"            console.log('stateIds automatically populated with', selectedStateIds.length, 'states');",
+									"            console.log('State IDs:', selectedStateIds);",
+									"        } else {",
+									"            console.warn('state_ids is not a valid array');",
+									"        }",
+									"    } catch (e) {",
+									"        console.error('Error parsing state_ids:', e);",
+									"    }",
+									"} else {",
+									"    console.log('INFO: state_ids not found in environment. Run \"Get States\" first to automatically populate stateIds.');",
+									"    console.log('INFO: Using default example stateIds. You can modify the request body manually.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "PATCH",
 						"header": [
@@ -2512,12 +3216,12 @@
 								{
 									"key": "id",
 									"value": "",
-									"description": "User UUID"
+									"description": "User UUID - Automatically populated from user_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Update licensed states for a user.\n\n## Required Fields:\n- `stateIds` (array of UUIDs) - Array of state IDs - **REQUIRED**",
+							"content": "Update licensed states for a user. The `stateIds` array is automatically populated from the \"Get States\" endpoint response (first 2 states). The `id` parameter is automatically set from the authenticated user's ID.\n\n## Required Fields:\n- `stateIds` (array of UUIDs) - Array of state IDs - **REQUIRED**\n\n**Note:** Run \"Get States\" first to automatically populate `stateIds`. The pre-request script will use the first 2 state IDs from the response. You can modify the request body manually if you need different states.",
 							"type": "text/markdown"
 						}
 					},
@@ -2525,6 +3229,43 @@
 				},
 				{
 					"name": "Bulk Delete Users",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically populate userIds from Get All Users response",
+									"const userIdsJson = pm.environment.get('user_ids');",
+									"if (userIdsJson) {",
+									"    try {",
+									"        const userIds = JSON.parse(userIdsJson);",
+									"        if (Array.isArray(userIds) && userIds.length > 0) {",
+									"            // Get first 2 user IDs as example (you can modify this logic)",
+									"            const selectedUserIds = userIds.slice(0, 2);",
+									"            ",
+									"            // Update request body",
+									"            const body = {",
+									"                userIds: selectedUserIds",
+									"            };",
+									"            pm.request.body.raw = JSON.stringify(body, null, 2);",
+									"            ",
+									"            console.log('userIds automatically populated with', selectedUserIds.length, 'users');",
+									"            console.log('User IDs:', selectedUserIds);",
+									"        } else {",
+									"            console.warn('user_ids is not a valid array');",
+									"        }",
+									"    } catch (e) {",
+									"        console.error('Error parsing user_ids:', e);",
+									"    }",
+									"} else {",
+									"    console.log('INFO: user_ids not found in environment. Run \"Get All Users\" first to automatically populate userIds.');",
+									"    console.log('INFO: Using default example userIds. You can modify the request body manually.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "POST",
 						"header": [
@@ -2561,7 +3302,7 @@
 							]
 						},
 						"description": {
-							"content": "Bulk delete users.\n\n## Required Fields:\n- `userIds` (array of UUIDs) - Array of user IDs to delete - **REQUIRED**",
+							"content": "Bulk delete users (soft delete). The `userIds` array is automatically populated from the \"Get All Users\" endpoint response (first 2 users).\n\n## Required Fields:\n- `userIds` (array of UUIDs) - Array of user IDs to delete - **REQUIRED**\n\n**Note:** Run \"Get All Users\" first to automatically populate `userIds`. The pre-request script will use the first 2 user IDs from the response. You can modify the request body manually if you need different users.\n\n**Warning:** This will soft delete the users (set status to 'deleted'). Use \"Permanent Delete User\" for hard deletion.",
 							"type": "text/markdown"
 						}
 					},
@@ -2569,6 +3310,52 @@
 				},
 				{
 					"name": "Bulk Update Users",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically populate request body with userIds and updateData",
+									"const userIdsJson = pm.environment.get('user_ids');",
+									"let body = {};",
+									"",
+									"// Try to get userIds from environment (populated by Get All Users)",
+									"if (userIdsJson) {",
+									"    try {",
+									"        const userIds = JSON.parse(userIdsJson);",
+									"        if (Array.isArray(userIds) && userIds.length > 0) {",
+									"            // Get first 2 user IDs as example (you can modify this logic)",
+									"            body.userIds = userIds.slice(0, 2);",
+									"            console.log('userIds automatically populated with', body.userIds.length, 'users');",
+									"            console.log('User IDs:', body.userIds);",
+									"        } else {",
+									"            console.warn('user_ids is not a valid array, using default example');",
+									"            body.userIds = [\"user-uuid-1\", \"user-uuid-2\"];",
+									"        }",
+									"    } catch (e) {",
+									"        console.error('Error parsing user_ids:', e);",
+									"        body.userIds = [\"user-uuid-1\", \"user-uuid-2\"];",
+									"    }",
+									"} else {",
+									"    console.log('INFO: user_ids not found in environment. Run \"Get All Users\" first to automatically populate userIds.');",
+									"    console.log('INFO: Using default example userIds. You can modify the request body manually.');",
+									"    body.userIds = [\"user-uuid-1\", \"user-uuid-2\"];",
+									"}",
+									"",
+									"// Always set default updateData (user can modify manually if needed)",
+									"body.updateData = {",
+									"    status: 'active',",
+									"    role: 'veterinarian'",
+									"};",
+									"",
+									"// Update the request body",
+									"pm.request.body.raw = JSON.stringify(body, null, 2);",
+									"console.log('Request body automatically populated:', JSON.stringify(body, null, 2));"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "POST",
 						"header": [
@@ -2605,7 +3392,7 @@
 							]
 						},
 						"description": {
-							"content": "Bulk update users.\n\n## Required Fields:\n- `userIds` (array of UUIDs) - Array of user IDs to update - **REQUIRED**\n- `updateData` (object) - Update data object - **REQUIRED**",
+							"content": "Bulk update users. The `userIds` array is automatically populated from the \"Get All Users\" endpoint response (first 2 users).\n\n## Required Fields:\n- `userIds` (array of UUIDs) - Array of user IDs to update - **REQUIRED**\n- `updateData` (object) - Update data object - **REQUIRED**\n  - All fields in `updateData` are optional (same as Update User endpoint)\n  - Common fields: `status`, `role`, `full_name`, `email`, etc.\n\n**Note:** Run \"Get All Users\" first to automatically populate `userIds`. The pre-request script will use the first 2 user IDs from the response. You can modify the request body manually if you need different users or different update data.",
 							"type": "text/markdown"
 						}
 					},
@@ -2649,6 +3436,32 @@
 				},
 				{
 					"name": "Restore User",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set id from target_user_id (set by Get User by ID)",
+									"const targetUserId = pm.environment.get('target_user_id');",
+									"if (targetUserId && targetUserId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const idVar = url.variables.get('id');",
+									"    if (idVar) {",
+									"        idVar.value = targetUserId;",
+									"        console.log('User id automatically set to:', targetUserId);",
+									"    } else {",
+									"        console.error('ERROR: id variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: target_user_id is not set in environment.');",
+									"    console.error('Please call GET /api/users/:id first to set the target_user_id.');",
+									"    console.error('The target_user_id is automatically stored when you call Get User by ID.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "POST",
 						"header": [
@@ -2678,7 +3491,7 @@
 							]
 						},
 						"description": {
-							"content": "Restore a soft-deleted user.",
+							"content": "Restore a soft-deleted user. The `id` parameter is automatically populated from the `target_user_id` environment variable (set when you call GET /api/users/:id).\n\n**Note:** Call GET /api/users/:id first to set the `target_user_id`. If the user is deleted, you'll see a message in the console confirming the user is deleted.",
 							"type": "text/markdown"
 						}
 					},
@@ -2686,6 +3499,32 @@
 				},
 				{
 					"name": "Permanent Delete User",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set id from target_user_id (set by Get User by ID)",
+									"const targetUserId = pm.environment.get('target_user_id');",
+									"if (targetUserId && targetUserId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const idVar = url.variables.get('id');",
+									"    if (idVar) {",
+									"        idVar.value = targetUserId;",
+									"        console.log('User id automatically set to:', targetUserId);",
+									"    } else {",
+									"        console.error('ERROR: id variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: target_user_id is not set in environment.');",
+									"    console.error('Please call GET /api/users/:id first to set the target_user_id.');",
+									"    console.error('The target_user_id is automatically stored when you call Get User by ID.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "DELETE",
 						"header": [
@@ -2715,7 +3554,7 @@
 							]
 						},
 						"description": {
-							"content": "Permanently delete a user (hard delete). This action cannot be undone.",
+							"content": "Permanently delete a user (hard delete). This action cannot be undone. The `id` parameter is automatically populated from the `target_user_id` environment variable (set when you call GET /api/users/:id).\n\n**Note:** Call GET /api/users/:id first to set the `target_user_id`. This ensures you're deleting the correct user.",
 							"type": "text/markdown"
 						}
 					},
@@ -2911,6 +3750,34 @@
 				},
 				{
 					"name": "Get Clinic Services",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Store the first service ID from the response for use in Update Clinic Service endpoint",
+									"if (pm.response.code === 200) {",
+									"    try {",
+									"        const responseJson = pm.response.json();",
+									"        if (Array.isArray(responseJson) && responseJson.length > 0) {",
+									"            const firstService = responseJson[0];",
+									"            if (firstService && firstService.id) {",
+									"                pm.environment.set('service_id', firstService.id);",
+									"                console.log('service_id stored:', firstService.id);",
+									"            }",
+									"        } else {",
+									"            console.log('No services found in response. service_id not set.');",
+									"            pm.environment.unset('service_id');",
+									"        }",
+									"    } catch (e) {",
+									"        console.error('Error parsing response:', e);",
+									"    }",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -2947,7 +3814,7 @@
 							]
 						},
 						"description": {
-							"content": "Get services for a clinic, optionally filtered by active status.",
+							"content": "Get services for a clinic, optionally filtered by active status. The first service ID from the response is automatically stored in `service_id` environment variable for use in Update Clinic Service endpoint.\n\n## Response\nReturns an array of clinic services/products. If the clinic has no services, returns an empty array `[]`.\n\n### Array Item Structure\nEach item in the array has the following structure:\n```typescript\n{\n  id: string;                          // Service UUID\n  clinic_id: string;                   // Clinic UUID\n  service_name: string;                // Name of the service/product\n  default_medical_record_note?: string | null;\n  description: string;                 // Service description\n  duration_minutes: number;            // Duration in minutes\n  price: number;                       // Service price\n  is_active: boolean;                  // Whether the service is active\n  created_at: string;                  // ISO 8601 timestamp\n  updated_at: string;                  // ISO 8601 timestamp\n  type: 'Injections' | 'Medication' | 'Product' | 'Service' | 'Vaccine';\n  details: object;                     // Type-specific details (varies by type)\n  include_in_medical_record: boolean;\n  include_on_invoice_if_declined: boolean;\n  invoice_line_name: string;\n  inventory_id: string;\n  price_setting: {                      // Price settings object\n    selling_price: number;\n    min_price: number;\n    dispensing_fee_id?: string | null;\n    dispensing_fee_amt: number;\n    include_on_estimate_and_invoice_print: boolean;\n    client_discount_eligible: boolean;\n    hide_from_treatment_search: boolean;\n    default_product_discount: boolean;\n    taxable: boolean;\n    discount?: { type: '%' | '$'; discount: number; note: string; } | null;\n  };\n  automatic_actions: {                 // Automatic task settings\n    title: string;\n    due_in: number;\n    time_unit: 'Day(s)' | 'Week(s)' | 'Months(s)' | 'Year(s)';\n    assigned_user_id: string | null;\n    priority: 'Low' | 'Medium' | 'Urgent';\n  } | null;\n  discharge_instructions: string | null;\n  category_id: string | null;\n  dispensing_id: string | null;\n  productLots?: Array<{                // Optional product lots\n    id?: string;\n    created_at?: string;\n    clinic_service_id?: string;\n    manufacturer: string;\n    serial_number: string;\n    lot_number: string;\n    expiration_date: string;\n    bottle_number: string | null;\n  }>;\n}\n```",
 							"type": "text/markdown"
 						}
 					},
@@ -3135,6 +4002,32 @@
 				},
 				{
 					"name": "Update Clinic Service",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set serviceId from environment variable (set by Get Clinic Services)",
+									"const serviceId = pm.environment.get('service_id');",
+									"if (serviceId && serviceId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const serviceIdVar = url.variables.get('serviceId');",
+									"    if (serviceIdVar) {",
+									"        serviceIdVar.value = serviceId;",
+									"        console.log('serviceId automatically set to:', serviceId);",
+									"    } else {",
+									"        console.error('ERROR: serviceId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: service_id is not set in environment.');",
+									"    console.error('Please call GET /api/clinics/:id/services first to set the service_id.');",
+									"    console.error('The service_id is automatically stored when you call Get Clinic Services.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "PATCH",
 						"header": [
@@ -3178,7 +4071,7 @@
 							]
 						},
 						"description": {
-							"content": "Update a clinic service. All fields are optional.",
+							"content": "Update a clinic service. All fields are optional. The `serviceId` parameter is automatically populated from the `service_id` environment variable (set when you call GET /api/clinics/:id/services).",
 							"type": "text/markdown"
 						}
 					},
@@ -3228,6 +4121,33 @@
 			"item": [
 				{
 					"name": "Get All Organizations",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Store the first organization ID from the response for use in Get Organization by ID endpoint",
+									"if (pm.response.code === 200) {",
+									"    try {",
+									"        const responseJson = pm.response.json();",
+									"        if (Array.isArray(responseJson) && responseJson.length > 0) {",
+									"            const firstOrg = responseJson[0];",
+									"            if (firstOrg && firstOrg.id) {",
+									"                pm.environment.set('organization_id', firstOrg.id);",
+									"                console.log('organization_id stored:', firstOrg.id);",
+									"            }",
+									"        } else {",
+									"            console.log('No organizations found in response. organization_id not updated.');",
+									"        }",
+									"    } catch (e) {",
+									"        console.error('Error parsing response:', e);",
+									"    }",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -3248,7 +4168,7 @@
 							]
 						},
 						"description": {
-							"content": "Get all organizations for the authenticated user.",
+							"content": "Get all organizations for the authenticated user. The first organization ID from the response is automatically stored in `organization_id` environment variable for use in Get Organization by ID endpoint.",
 							"type": "text/markdown"
 						}
 					},
@@ -3285,6 +4205,32 @@
 				},
 				{
 					"name": "Get Organization by ID",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set id from environment variable (set by Get All Organizations or GET /api/users/me)",
+									"const orgId = pm.environment.get('organization_id');",
+									"if (orgId && orgId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const idVar = url.variables.get('id');",
+									"    if (idVar) {",
+									"        idVar.value = orgId;",
+									"        console.log('Organization id automatically set to:', orgId);",
+									"    } else {",
+									"        console.error('ERROR: id variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: organization_id is not set in environment.');",
+									"    console.error('Please call GET /api/organizations first to automatically populate organization_id.');",
+									"    console.error('Alternatively, organization_id is automatically set by the pre-request script when fetching the token.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -3307,13 +4253,13 @@
 							"variable": [
 								{
 									"key": "id",
-									"value": "{{organization_id}}",
-									"description": "Organization UUID"
+									"value": "",
+									"description": "Organization UUID - Automatically populated from organization_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Get a single organization by ID.",
+							"content": "Get a single organization by ID. The `id` parameter is automatically populated from the `organization_id` environment variable (set when you call GET /api/organizations or from GET /api/users/me).",
 							"type": "text/markdown"
 						}
 					},
@@ -3566,6 +4512,34 @@
 			"item": [
 				{
 					"name": "Get All Invoices",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Store the first invoice ID from the response for use in Get Invoice by ID endpoint",
+									"if (pm.response.code === 200) {",
+									"    try {",
+									"        const responseJson = pm.response.json();",
+									"        if (Array.isArray(responseJson) && responseJson.length > 0) {",
+									"            const firstInvoice = responseJson[0];",
+									"            if (firstInvoice && firstInvoice.id) {",
+									"                pm.environment.set('invoice_id', firstInvoice.id);",
+									"                console.log('invoice_id stored:', firstInvoice.id);",
+									"            }",
+									"        } else {",
+									"            console.log('No invoices found in response. invoice_id not set.');",
+									"            pm.environment.unset('invoice_id');",
+									"        }",
+									"    } catch (e) {",
+									"        console.error('Error parsing response:', e);",
+									"    }",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -3586,7 +4560,7 @@
 							]
 						},
 						"description": {
-							"content": "Get all invoices.",
+							"content": "Get all invoices. The first invoice ID from the response is automatically stored in `invoice_id` environment variable for use in Get Invoice by ID endpoint.",
 							"type": "text/markdown"
 						}
 					},
@@ -3594,6 +4568,58 @@
 				},
 				{
 					"name": "Get Invoice by ID",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set id from environment variable (set by Get All Invoices)",
+									"const invoiceId = pm.environment.get('invoice_id');",
+									"if (invoiceId && invoiceId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const idVar = url.variables.get('id');",
+									"    if (idVar) {",
+									"        idVar.value = invoiceId;",
+									"        console.log('Invoice id automatically set to:', invoiceId);",
+									"    } else {",
+									"        console.error('ERROR: id variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: invoice_id is not set in environment.');",
+									"    console.error('Please call GET /api/invoices first to set the invoice_id.');",
+									"    console.error('The invoice_id is automatically stored when you call Get All Invoices.');",
+									"}"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Store the first invoice item ID from the response for use in Get Invoice Item by ID endpoint",
+									"if (pm.response.code === 200) {",
+									"    try {",
+									"        const responseJson = pm.response.json();",
+									"        if (responseJson && responseJson.added_invoice_items && Array.isArray(responseJson.added_invoice_items) && responseJson.added_invoice_items.length > 0) {",
+									"            const firstItem = responseJson.added_invoice_items[0];",
+									"            if (firstItem && firstItem.id) {",
+									"                pm.environment.set('invoice_item_id', firstItem.id);",
+									"                console.log('invoice_item_id stored:', firstItem.id);",
+									"            }",
+									"        } else {",
+									"            console.log('No invoice items found in response. invoice_item_id not set.');",
+									"            pm.environment.unset('invoice_item_id');",
+									"        }",
+									"    } catch (e) {",
+									"        console.error('Error parsing response:', e);",
+									"    }",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -3617,12 +4643,12 @@
 								{
 									"key": "id",
 									"value": "",
-									"description": "Invoice UUID"
+									"description": "Invoice UUID - Automatically populated from invoice_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Get a single invoice by ID with full relations.",
+							"content": "Get a single invoice by ID with full relations. The `id` parameter is automatically populated from the `invoice_id` environment variable (set when you call GET /api/invoices).\n\n**Invoice Items:** If the invoice has invoice items, the first invoice item ID from the `added_invoice_items` array is automatically stored in `invoice_item_id` environment variable for use in Get Invoice Item by ID endpoint. If the invoice has no items, `added_invoice_items` will not be present in the response and `invoice_item_id` will not be set.\n\n**Response Structure:**\n- `ordered_treatments`: Array of treatment plans (if any)\n- `ordered_prescriptions`: Array of prescriptions (if any)\n- `added_invoice_items`: Array of invoice items (if any) - only present when invoice has items",
 							"type": "text/markdown"
 						}
 					},
@@ -3630,6 +4656,32 @@
 				},
 				{
 					"name": "Get Invoice by Appointment ID",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set appointmentId from environment variable (set by Get Appointments by Clinic)",
+									"const appointmentId = pm.environment.get('appointment_id');",
+									"if (appointmentId && appointmentId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const appointmentIdVar = url.variables.get('appointmentId');",
+									"    if (appointmentIdVar) {",
+									"        appointmentIdVar.value = appointmentId;",
+									"        console.log('Appointment id automatically set to:', appointmentId);",
+									"    } else {",
+									"        console.error('ERROR: appointmentId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: appointment_id is not set in environment.');",
+									"    console.error('Please call GET /api/appointments/clinic/:clinicId first to set the appointment_id.');",
+									"    console.error('The appointment_id is automatically stored when you call Get Appointments by Clinic.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -3654,12 +4706,12 @@
 								{
 									"key": "appointmentId",
 									"value": "",
-									"description": "Appointment UUID"
+									"description": "Appointment UUID - Automatically populated from appointment_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Get invoice by appointment ID.",
+							"content": "Get invoice by appointment ID. The `appointmentId` parameter is automatically populated from the `appointment_id` environment variable (set when you call GET /api/appointments/clinic/:clinicId).\n\n**Note:** If no invoice exists for the appointment, this endpoint returns `null` with a 200 OK status. This is expected behavior - not all appointments have invoices.",
 							"type": "text/markdown"
 						}
 					},
@@ -3704,6 +4756,32 @@
 				},
 				{
 					"name": "Get Invoices by Pet ID",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set petId from environment variable (set by Get All Pets)",
+									"const petId = pm.environment.get('pet_id');",
+									"if (petId && petId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const petIdVar = url.variables.get('petId');",
+									"    if (petIdVar) {",
+									"        petIdVar.value = petId;",
+									"        console.log('Pet id automatically set to:', petId);",
+									"    } else {",
+									"        console.error('ERROR: petId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: pet_id is not set in environment.');",
+									"    console.error('Please call GET /api/pets first to set the pet_id.');",
+									"    console.error('The pet_id is automatically stored when you call Get All Pets.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -3728,12 +4806,12 @@
 								{
 									"key": "petId",
 									"value": "",
-									"description": "Pet UUID"
+									"description": "Pet UUID - Automatically populated from pet_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Get all invoices for a pet.",
+							"content": "Get all invoices for a pet. The `petId` parameter is automatically populated from the `pet_id` environment variable (set when you call GET /api/pets).\n\n**Note:** Invoices are related to pets through appointments. This endpoint returns all invoices for appointments associated with the specified pet.",
 							"type": "text/markdown"
 						}
 					},
@@ -3741,6 +4819,32 @@
 				},
 				{
 					"name": "Get Invoice Item by ID",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set itemId from environment variable (set by Get Invoice by ID)",
+									"const itemId = pm.environment.get('invoice_item_id');",
+									"if (itemId && itemId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const itemIdVar = url.variables.get('itemId');",
+									"    if (itemIdVar) {",
+									"        itemIdVar.value = itemId;",
+									"        console.log('Invoice item id automatically set to:', itemId);",
+									"    } else {",
+									"        console.error('ERROR: itemId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: invoice_item_id is not set in environment.');",
+									"    console.error('Please call GET /api/invoices/:id first to set the invoice_item_id.');",
+									"    console.error('The invoice_item_id is automatically stored when you call Get Invoice by ID (from added_invoice_items array).');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -3765,12 +4869,12 @@
 								{
 									"key": "itemId",
 									"value": "",
-									"description": "Invoice Item UUID"
+									"description": "Invoice Item UUID - Automatically populated from invoice_item_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Get a single invoice item by ID.",
+							"content": "Get a single invoice item by ID. The `itemId` parameter is automatically populated from the `invoice_item_id` environment variable (set when you call GET /api/invoices/:id).\n\n**Note:** Invoice items are found in the `added_invoice_items` array when you fetch an invoice. The first invoice item ID from that array is automatically stored in `invoice_item_id` when you call Get Invoice by ID.\n\n**Important:** If the invoice has no invoice items, the `added_invoice_items` array will not be present in the response, and `invoice_item_id` will not be set. In this case, you'll need to create invoice items first using POST /api/invoices/:id/items, or manually provide an invoice item ID.",
 							"type": "text/markdown"
 						}
 					},
@@ -3778,6 +4882,50 @@
 				},
 				{
 					"name": "Create Invoice",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set clientId and appointmentId from environment variables",
+									"const clientId = pm.environment.get('client_id');",
+									"const appointmentId = pm.environment.get('appointment_id');",
+									"",
+									"const url = pm.request.url;",
+									"",
+									"// Set clientId",
+									"if (clientId && clientId.trim() !== '') {",
+									"    const clientIdVar = url.variables.get('clientId');",
+									"    if (clientIdVar) {",
+									"        clientIdVar.value = clientId;",
+									"        console.log('Client id automatically set to:', clientId);",
+									"    } else {",
+									"        console.error('ERROR: clientId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: client_id is not set in environment.');",
+									"    console.error('Please call GET /api/clients first to set the client_id.');",
+									"}",
+									"",
+									"// Set appointmentId",
+									"if (appointmentId && appointmentId.trim() !== '') {",
+									"    const appointmentIdVar = url.variables.get('appointmentId');",
+									"    if (appointmentIdVar) {",
+									"        appointmentIdVar.value = appointmentId;",
+									"        console.log('Appointment id automatically set to:', appointmentId);",
+									"    } else {",
+									"        console.error('ERROR: appointmentId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: appointment_id is not set in environment.');",
+									"    console.error('Please call GET /api/appointments/clinic/:clinicId first to set the appointment_id.');",
+									"    console.error('The appointment_id is automatically stored when you call Get Appointments by Clinic.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "POST",
 						"header": [
@@ -3817,18 +4965,18 @@
 							"variable": [
 								{
 									"key": "clientId",
-									"value": "{{client_id}}",
-									"description": "Client UUID"
+									"value": "",
+									"description": "Client UUID - Automatically populated from client_id environment variable"
 								},
 								{
 									"key": "appointmentId",
 									"value": "",
-									"description": "Appointment UUID"
+									"description": "Appointment UUID - Automatically populated from appointment_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Create a new invoice for a client and appointment.\n\n## All Fields are Optional:\n- `amount` (number) - Invoice amount\n- `status` (enum) - One of: Active, Charges Complete, Checked Out\n- `treatments` (array of strings) - Treatment IDs\n- `prescriptions` (array of strings) - Prescription IDs\n- `invoice_items` (array of strings) - Invoice item IDs\n- `amount_paid` (number) - Amount paid\n- `amount_refunded` (number) - Amount refunded\n- `paid_at` (string) - Payment date\n- `stripe_invoice` (string) - Stripe invoice ID\n\n**Note:** `client_id` and `appointment_id` come from URL parameters.",
+							"content": "Create a new invoice for a client and appointment. Both `clientId` and `appointmentId` parameters are automatically populated from environment variables (`client_id` and `appointment_id`).\n\n## All Fields are Optional:\n- `amount` (number) - Invoice amount\n- `status` (enum) - One of: Active, Charges Complete, Checked Out\n- `treatments` (array of strings) - Treatment IDs\n- `prescriptions` (array of strings) - Prescription IDs\n- `invoice_items` (array of strings) - Invoice item IDs\n- `amount_paid` (number) - Amount paid\n- `amount_refunded` (number) - Amount refunded\n- `paid_at` (string) - Payment date\n- `stripe_invoice` (string) - Stripe invoice ID\n\n**Note:** `client_id` and `appointment_id` come from URL parameters and are automatically set from environment variables.",
 							"type": "text/markdown"
 						}
 					},
@@ -3836,6 +4984,47 @@
 				},
 				{
 					"name": "Create Invoice Items",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set invoice id from environment variable",
+									"const invoiceId = pm.environment.get('invoice_id');",
+									"if (invoiceId && invoiceId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const idVar = url.variables.get('id');",
+									"    if (idVar) {",
+									"        idVar.value = invoiceId;",
+									"        console.log('Invoice id automatically set to:', invoiceId);",
+									"    }",
+									"}",
+									"",
+									"// Automatically populate service_id in request body if not set",
+									"const serviceId = pm.environment.get('service_id');",
+									"if (serviceId && serviceId.trim() !== '') {",
+									"    try {",
+									"        const body = pm.request.body.raw;",
+									"        if (body) {",
+									"            const bodyJson = JSON.parse(body);",
+									"            if (Array.isArray(bodyJson) && bodyJson.length > 0) {",
+									"                // Update first item's service_id if it's empty or missing",
+									"                if (!bodyJson[0].service_id || bodyJson[0].service_id === '') {",
+									"                    bodyJson[0].service_id = serviceId;",
+									"                    pm.request.body.raw = JSON.stringify(bodyJson, null, 2);",
+									"                    console.log('service_id automatically set to:', serviceId);",
+									"                }",
+									"            }",
+									"        }",
+									"    } catch (e) {",
+									"        console.error('Error updating request body:', e);",
+									"    }",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "POST",
 						"header": [
@@ -3852,7 +5041,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "[\n  {\n    \"quantity\": 1,\n    \"service_id\": \"\",\n    \"patient_id\": null,\n    \"item_name\": \"Consultation\",\n    \"item_volume\": null,\n    \"item_price\": 75.00\n  }\n]",
+							"raw": "[\n  {\n    \"quantity\": 1,\n    \"service_id\": \"{{service_id}}\",\n    \"patient_id\": null,\n    \"item_name\": \"Consultation\",\n    \"item_volume\": null,\n    \"item_price\": 75.00\n  }\n]",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -3874,12 +5063,12 @@
 								{
 									"key": "id",
 									"value": "",
-									"description": "Invoice UUID"
+									"description": "Invoice UUID - Automatically populated from invoice_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Create invoice items for an invoice. Accepts an array of items.\n\n## Required Fields (per item):\n- `quantity` (number) - Item quantity - **REQUIRED**\n- `service_id` (UUID) - Service ID - **REQUIRED**\n\n## Optional Fields (per item):\n- `patient_id` (UUID) - Patient/pet ID\n- `item_name` (string) - Item name\n- `item_volume` (string) - Item volume\n- `item_price` (number) - Item price",
+							"content": "Create invoice items for an invoice. Accepts an array of items.\n\nThe `id` parameter is automatically populated from the `invoice_id` environment variable. The `service_id` in the request body is automatically populated from the `service_id` environment variable (if the body has an empty `service_id`).\n\n## Required Fields (per item):\n- `quantity` (number) - Item quantity - **REQUIRED**\n- `service_id` (UUID) - Service ID - **REQUIRED** (must be a valid UUID, not an empty string)\n\n## Optional Fields (per item):\n- `patient_id` (UUID) - Patient/pet ID (can be null)\n- `item_name` (string) - Item name\n- `item_volume` (string) - Item volume\n- `item_price` (number) - Item price\n\n## Example Request Body:\n```json\n[\n  {\n    \"quantity\": 1,\n    \"service_id\": \"550e8400-e29b-41d4-a716-446655440000\",\n    \"patient_id\": null,\n    \"item_name\": \"Consultation\",\n    \"item_volume\": null,\n    \"item_price\": 75.00\n  }\n]\n```\n\n**Important:**\n- `service_id` must be a valid UUID (not an empty string `\"\"`)\n- If you send an empty string for `service_id`, you will get a 400 Bad Request error\n- The `service_id` is automatically populated from the environment variable if the body has an empty value\n- Call `GET /api/clinics/:id/services` first to set the `service_id` environment variable",
 							"type": "text/markdown"
 						}
 					},
@@ -4045,6 +5234,32 @@
 			"item": [
 				{
 					"name": "Get SOAP by Pet ID",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set petId from environment variable (set by Get All Pets)",
+									"const petId = pm.environment.get('pet_id');",
+									"if (petId && petId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const petIdVar = url.variables.get('petId');",
+									"    if (petIdVar) {",
+									"        petIdVar.value = petId;",
+									"        console.log('Pet id automatically set to:', petId);",
+									"    } else {",
+									"        console.error('ERROR: petId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: pet_id is not set in environment.');",
+									"    console.error('Please call GET /api/pets first to set the pet_id.');",
+									"    console.error('The pet_id is automatically stored when you call Get All Pets.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -4069,12 +5284,12 @@
 								{
 									"key": "petId",
 									"value": "",
-									"description": "Pet UUID"
+									"description": "Pet UUID - Automatically populated from pet_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Get SOAP notes for a pet.",
+							"content": "Get SOAP notes for a pet. The `petId` parameter is automatically populated from the `pet_id` environment variable (set when you call GET /api/pets).",
 							"type": "text/markdown"
 						}
 					},
@@ -4082,6 +5297,32 @@
 				},
 				{
 					"name": "Get SOAP Audit by Pet",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set petId from environment variable (set by Get All Pets)",
+									"const petId = pm.environment.get('pet_id');",
+									"if (petId && petId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const petIdVar = url.variables.get('petId');",
+									"    if (petIdVar) {",
+									"        petIdVar.value = petId;",
+									"        console.log('Pet id automatically set to:', petId);",
+									"    } else {",
+									"        console.error('ERROR: petId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: pet_id is not set in environment.');",
+									"    console.error('Please call GET /api/pets first to set the pet_id.');",
+									"    console.error('The pet_id is automatically stored when you call Get All Pets.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -4107,12 +5348,12 @@
 								{
 									"key": "petId",
 									"value": "",
-									"description": "Pet UUID"
+									"description": "Pet UUID - Automatically populated from pet_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Get SOAP audit trail for a pet.",
+							"content": "Get SOAP audit trail for a pet. The `petId` parameter is automatically populated from the `pet_id` environment variable (set when you call GET /api/pets).",
 							"type": "text/markdown"
 						}
 					},
@@ -4120,6 +5361,32 @@
 				},
 				{
 					"name": "Get Latest SOAP Audit by Pet",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set petId from environment variable (set by Get All Pets)",
+									"const petId = pm.environment.get('pet_id');",
+									"if (petId && petId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const petIdVar = url.variables.get('petId');",
+									"    if (petIdVar) {",
+									"        petIdVar.value = petId;",
+									"        console.log('Pet id automatically set to:', petId);",
+									"    } else {",
+									"        console.error('ERROR: petId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: pet_id is not set in environment.');",
+									"    console.error('Please call GET /api/pets first to set the pet_id.');",
+									"    console.error('The pet_id is automatically stored when you call Get All Pets.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -4146,12 +5413,12 @@
 								{
 									"key": "petId",
 									"value": "",
-									"description": "Pet UUID"
+									"description": "Pet UUID - Automatically populated from pet_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Get latest SOAP audit for a pet.",
+							"content": "Get latest SOAP audit for a pet. The `petId` parameter is automatically populated from the `pet_id` environment variable (set when you call GET /api/pets).",
 							"type": "text/markdown"
 						}
 					},
@@ -4159,6 +5426,32 @@
 				},
 				{
 					"name": "Get SOAP by Pet ID (Full)",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set petId from environment variable (set by Get All Pets)",
+									"const petId = pm.environment.get('pet_id');",
+									"if (petId && petId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const petIdVar = url.variables.get('petId');",
+									"    if (petIdVar) {",
+									"        petIdVar.value = petId;",
+									"        console.log('Pet id automatically set to:', petId);",
+									"    } else {",
+									"        console.error('ERROR: petId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: pet_id is not set in environment.');",
+									"    console.error('Please call GET /api/pets first to set the pet_id.');",
+									"    console.error('The pet_id is automatically stored when you call Get All Pets.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -4184,12 +5477,12 @@
 								{
 									"key": "petId",
 									"value": "",
-									"description": "Pet UUID"
+									"description": "Pet UUID - Automatically populated from pet_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Get full SOAP note details for a pet.",
+							"content": "Get full SOAP note details for a pet. The `petId` parameter is automatically populated from the `pet_id` environment variable (set when you call GET /api/pets).",
 							"type": "text/markdown"
 						}
 					},
@@ -4234,6 +5527,32 @@
 				},
 				{
 					"name": "Get SOAP Note by ID",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set id from environment variable (set by Create SOAP Note)",
+									"const soapId = pm.environment.get('soap_id');",
+									"if (soapId && soapId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const idVar = url.variables.get('id');",
+									"    if (idVar) {",
+									"        idVar.value = soapId;",
+									"        console.log('SOAP note id automatically set to:', soapId);",
+									"    } else {",
+									"        console.error('ERROR: id variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: soap_id is not set in environment.');",
+									"    console.error('Please call POST /api/soap first to create a SOAP note and set the soap_id.');",
+									"    console.error('The soap_id is automatically stored when you call Create SOAP Note.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -4257,12 +5576,12 @@
 								{
 									"key": "id",
 									"value": "",
-									"description": "SOAP Note UUID"
+									"description": "SOAP Note UUID - Automatically populated from soap_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Get a single SOAP note by ID.",
+							"content": "Get a single SOAP note by ID. The `id` parameter is automatically populated from the `soap_id` environment variable (set when you call POST /api/soap).",
 							"type": "text/markdown"
 						}
 					},
@@ -4270,6 +5589,35 @@
 				},
 				{
 					"name": "Create SOAP Note",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically extract and store SOAP note ID from response",
+									"if (pm.response.code === 200 || pm.response.code === 201) {",
+									"    try {",
+									"        const responseJson = pm.response.json();",
+									"        if (responseJson && responseJson.id) {",
+									"            pm.environment.set('soap_id', responseJson.id);",
+									"            console.log('soap_id automatically set to:', responseJson.id);",
+									"            pm.test('SOAP note ID extracted and stored', function () {",
+									"                pm.expect(responseJson.id).to.be.a('string');",
+									"            });",
+									"        } else {",
+									"            console.warn('WARNING: Response does not contain an id field.');",
+									"        }",
+									"    } catch (e) {",
+									"        console.error('ERROR: Failed to parse response JSON:', e.message);",
+									"    }",
+									"} else {",
+									"    console.warn('WARNING: Response status is not 200/201. SOAP note ID not extracted.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "POST",
 						"header": [
@@ -4286,7 +5634,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"appointment_id\": \"\",\n  \"subjective\": \"Owner reports lethargy and loss of appetite\",\n  \"objective\": \"Temperature 102.5°F, heart rate elevated\",\n  \"assessment\": \"Possible infection\",\n  \"plan\": \"Prescribe antibiotics and monitor\"\n}",
+							"raw": "{\n  \"appointment_id\": \"{{appointment_id}}\",\n  \"subjective\": \"Owner reports lethargy and loss of appetite\",\n  \"objective\": \"Temperature 102.5°F, heart rate elevated\",\n  \"assessment\": \"Possible infection\",\n  \"plan\": \"Prescribe antibiotics and monitor\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -4304,7 +5652,7 @@
 							]
 						},
 						"description": {
-							"content": "Create a new SOAP note. The request body structure depends on your SOAP note schema. Common fields include appointment_id, subjective, objective, assessment, and plan.",
+							"content": "Create a new SOAP note. The request body structure depends on your SOAP note schema. Common fields include appointment_id, subjective, objective, assessment, and plan.\n\n**Note:** The `soap_id` is automatically extracted from the response and stored in the environment variable for use by Get SOAP Note by ID and Update SOAP Note endpoints.",
 							"type": "text/markdown"
 						}
 					},
@@ -4312,6 +5660,32 @@
 				},
 				{
 					"name": "Update SOAP Note",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set id from environment variable (set by Create SOAP Note)",
+									"const soapId = pm.environment.get('soap_id');",
+									"if (soapId && soapId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const idVar = url.variables.get('id');",
+									"    if (idVar) {",
+									"        idVar.value = soapId;",
+									"        console.log('SOAP note id automatically set to:', soapId);",
+									"    } else {",
+									"        console.error('ERROR: id variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: soap_id is not set in environment.');",
+									"    console.error('Please call POST /api/soap first to create a SOAP note and set the soap_id.');",
+									"    console.error('The soap_id is automatically stored when you call Create SOAP Note.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "PATCH",
 						"header": [
@@ -4349,12 +5723,12 @@
 								{
 									"key": "id",
 									"value": "",
-									"description": "SOAP Note UUID"
+									"description": "SOAP Note UUID - Automatically populated from soap_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Update a SOAP note. All fields are optional.",
+							"content": "Update a SOAP note. All fields are optional. The `id` parameter is automatically populated from the `soap_id` environment variable (set when you call POST /api/soap).",
 							"type": "text/markdown"
 						}
 					},
@@ -4362,6 +5736,32 @@
 				},
 				{
 					"name": "Check Active AI Expansion",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set soapNoteId from environment variable (set by Create SOAP Note)",
+									"const soapId = pm.environment.get('soap_id');",
+									"if (soapId && soapId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const soapNoteIdVar = url.variables.get('soapNoteId');",
+									"    if (soapNoteIdVar) {",
+									"        soapNoteIdVar.value = soapId;",
+									"        console.log('SOAP note id automatically set to:', soapId);",
+									"    } else {",
+									"        console.error('ERROR: soapNoteId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: soap_id is not set in environment.');",
+									"    console.error('Please call POST /api/soap first to create a SOAP note and set the soap_id.');",
+									"    console.error('The soap_id is automatically stored when you call Create SOAP Note.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -4386,12 +5786,12 @@
 								{
 									"key": "soapNoteId",
 									"value": "",
-									"description": "SOAP Note UUID"
+									"description": "SOAP Note UUID - Automatically populated from soap_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Check if a SOAP note has an active AI expansion.",
+							"content": "Check if a SOAP note has an active AI expansion. The `soapNoteId` parameter is automatically populated from the `soap_id` environment variable (set when you call POST /api/soap).",
 							"type": "text/markdown"
 						}
 					},
@@ -4399,6 +5799,32 @@
 				},
 				{
 					"name": "Expand SOAP Note (AI)",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set soapNoteId from environment variable (set by Create SOAP Note)",
+									"const soapId = pm.environment.get('soap_id');",
+									"if (soapId && soapId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const soapNoteIdVar = url.variables.get('soapNoteId');",
+									"    if (soapNoteIdVar) {",
+									"        soapNoteIdVar.value = soapId;",
+									"        console.log('SOAP note id automatically set to:', soapId);",
+									"    } else {",
+									"        console.error('ERROR: soapNoteId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: soap_id is not set in environment.');",
+									"    console.error('Please call POST /api/soap first to create a SOAP note and set the soap_id.');",
+									"    console.error('The soap_id is automatically stored when you call Create SOAP Note.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "POST",
 						"header": [
@@ -4437,12 +5863,12 @@
 								{
 									"key": "soapNoteId",
 									"value": "",
-									"description": "SOAP Note UUID"
+									"description": "SOAP Note UUID - Automatically populated from soap_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Expand a SOAP note using AI.\n\n## Optional Fields:\n- `section` (enum) - Section to expand: subjective, objective, assessment, plan, or all\n- `current_data` (object) - Current SOAP note data with sections",
+							"content": "Expand a SOAP note using AI. The `soapNoteId` parameter is automatically populated from the `soap_id` environment variable (set when you call POST /api/soap).\n\n## Optional Fields:\n- `section` (enum) - Section to expand: subjective, objective, assessment, plan, or all\n- `current_data` (object) - Current SOAP note data with sections",
 							"type": "text/markdown"
 						}
 					},
@@ -4450,6 +5876,32 @@
 				},
 				{
 					"name": "Undo SOAP Expansion",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set soapNoteId from environment variable (set by Create SOAP Note)",
+									"const soapId = pm.environment.get('soap_id');",
+									"if (soapId && soapId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const soapNoteIdVar = url.variables.get('soapNoteId');",
+									"    if (soapNoteIdVar) {",
+									"        soapNoteIdVar.value = soapId;",
+									"        console.log('SOAP note id automatically set to:', soapId);",
+									"    } else {",
+									"        console.error('ERROR: soapNoteId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: soap_id is not set in environment.');",
+									"    console.error('Please call POST /api/soap first to create a SOAP note and set the soap_id.');",
+									"    console.error('The soap_id is automatically stored when you call Create SOAP Note.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "POST",
 						"header": [
@@ -4474,12 +5926,12 @@
 								{
 									"key": "soapNoteId",
 									"value": "",
-									"description": "SOAP Note UUID"
+									"description": "SOAP Note UUID - Automatically populated from soap_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Undo the last AI expansion for a SOAP note.",
+							"content": "Undo the last AI expansion for a SOAP note. The `soapNoteId` parameter is automatically populated from the `soap_id` environment variable (set when you call POST /api/soap).",
 							"type": "text/markdown"
 						}
 					},
@@ -4487,6 +5939,32 @@
 				},
 				{
 					"name": "Get Treatment Plans by SOAP Note",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set soapNoteId from environment variable (set by Create SOAP Note)",
+									"const soapId = pm.environment.get('soap_id');",
+									"if (soapId && soapId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const soapNoteIdVar = url.variables.get('soapNoteId');",
+									"    if (soapNoteIdVar) {",
+									"        soapNoteIdVar.value = soapId;",
+									"        console.log('SOAP note id automatically set to:', soapId);",
+									"    } else {",
+									"        console.error('ERROR: soapNoteId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: soap_id is not set in environment.');",
+									"    console.error('Please call POST /api/soap first to create a SOAP note and set the soap_id.');",
+									"    console.error('The soap_id is automatically stored when you call Create SOAP Note.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -4512,12 +5990,12 @@
 								{
 									"key": "soapNoteId",
 									"value": "",
-									"description": "SOAP Note UUID"
+									"description": "SOAP Note UUID - Automatically populated from soap_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Get treatment plans for a SOAP note.",
+							"content": "Get treatment plans for a SOAP note. The `soapNoteId` parameter is automatically populated from the `soap_id` environment variable (set when you call POST /api/soap).",
 							"type": "text/markdown"
 						}
 					},
@@ -4525,6 +6003,46 @@
 				},
 				{
 					"name": "Create Treatment Plan",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically populate fields in request body from environment variables",
+									"const soapId = pm.environment.get('soap_id');",
+									"const appointmentId = pm.environment.get('appointment_id');",
+									"const petId = pm.environment.get('pet_id');",
+									"",
+									"try {",
+									"    const body = JSON.parse(pm.request.body.raw);",
+									"    ",
+									"    // Populate soap_note_id if not provided",
+									"    if (soapId && soapId.trim() !== '' && (!body.soap_note_id || body.soap_note_id.trim() === '')) {",
+									"        body.soap_note_id = soapId;",
+									"        console.log('soap_note_id automatically set to:', soapId);",
+									"    }",
+									"    ",
+									"    // Populate appointment_id if not provided (optimization: frontend should send this)",
+									"    if (appointmentId && appointmentId.trim() !== '' && (!body.appointment_id || body.appointment_id.trim() === '')) {",
+									"        body.appointment_id = appointmentId;",
+									"        console.log('appointment_id automatically set to:', appointmentId);",
+									"    }",
+									"    ",
+									"    // Populate pet_id if not provided",
+									"    if (petId && petId.trim() !== '' && (!body.pet_id || body.pet_id.trim() === '')) {",
+									"        body.pet_id = petId;",
+									"        console.log('pet_id automatically set to:', petId);",
+									"    }",
+									"    ",
+									"    pm.request.body.raw = JSON.stringify(body, null, 2);",
+									"} catch (e) {",
+									"    console.error('ERROR: Failed to parse request body:', e.message);",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "POST",
 						"header": [
@@ -4541,7 +6059,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"soap_note_id\": \"\",\n  \"treatment_description\": \"Antibiotic course for 7 days\",\n  \"status\": \"pending\"\n}",
+							"raw": "{\n  \"appointment_id\": \"{{appointment_id}}\",\n  \"soap_note_id\": \"{{soap_id}}\",\n  \"treatment_name\": \"Antibiotic Treatment\",\n  \"description\": \"Antibiotic course for 7 days\",\n  \"status\": \"prescribed\",\n  \"priority\": \"medium\",\n  \"service_id\": \"{{service_id}}\",\n  \"pet_id\": \"{{pet_id}}\",\n  \"dosage\": 1,\n  \"duration\": 7\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -4560,7 +6078,7 @@
 							]
 						},
 						"description": {
-							"content": "Create a treatment plan. Request body structure depends on your treatment plan schema.",
+							"content": "Create a treatment plan.\n\n## Required Fields:\n- `appointment_id` (UUID) - **REQUIRED** - Appointment ID (automatically populated from `appointment_id` env var if not provided)\n- `treatment_name` (string) - **REQUIRED** - Name of the treatment\n- `description` (string) - **REQUIRED** - Treatment description (can also be provided as `treatment_description`)\n- `status` (string) - **REQUIRED** - Status: `prescribed`, `in_progress`, `completed`, or `discontinued`\n\n## Optional Fields:\n- `soap_note_id` (UUID) - SOAP note ID (automatically populated from `soap_id` env var if not provided)\n- `service_id` (UUID) - Clinic service/product ID\n- `pet_id` (UUID) - Pet ID (automatically populated from `pet_id` env var if not provided)\n- `priority` (string) - Priority: `low`, `medium`, `high`, or `urgent` (default: `medium`)\n- `dosage` (number) - Dosage amount\n- `duration` (number) - Duration in days/minutes\n- `frequency` (string) - Frequency of administration\n- `instructions` (string) - Additional instructions\n- `scheduled_date` (string) - Scheduled date\n- `date_administered` (string) - Date when treatment was administered\n\n**Note:** The backend automatically sets `created_by` and `clinic_id` from the authenticated user. If `appointment_id` is not provided but `soap_note_id` is provided, the backend will fetch `appointment_id` from the SOAP note (this adds a database query, so it's recommended to provide `appointment_id` directly for better performance).",
 							"type": "text/markdown"
 						}
 					},
@@ -4620,6 +6138,32 @@
 				},
 				{
 					"name": "Get Body Maps by SOAP Note",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set soapNoteId from environment variable (set by Create SOAP Note)",
+									"const soapId = pm.environment.get('soap_id');",
+									"if (soapId && soapId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const soapNoteIdVar = url.variables.get('soapNoteId');",
+									"    if (soapNoteIdVar) {",
+									"        soapNoteIdVar.value = soapId;",
+									"        console.log('SOAP note id automatically set to:', soapId);",
+									"    } else {",
+									"        console.error('ERROR: soapNoteId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: soap_id is not set in environment.');",
+									"    console.error('Please call POST /api/soap first to create a SOAP note and set the soap_id.');",
+									"    console.error('The soap_id is automatically stored when you call Create SOAP Note.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -4645,12 +6189,12 @@
 								{
 									"key": "soapNoteId",
 									"value": "",
-									"description": "SOAP Note UUID"
+									"description": "SOAP Note UUID - Automatically populated from soap_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Get body maps for a SOAP note.",
+							"content": "Get body maps for a SOAP note. The `soapNoteId` parameter is automatically populated from the `soap_id` environment variable (set when you call POST /api/soap).",
 							"type": "text/markdown"
 						}
 					},
@@ -4695,6 +6239,33 @@
 				},
 				{
 					"name": "Create Body Map",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically populate soap_note_id and appointment_id in request body from environment variables",
+									"const soapId = pm.environment.get('soap_id');",
+									"const appointmentId = pm.environment.get('appointment_id');",
+									"try {",
+									"    const body = JSON.parse(pm.request.body.raw);",
+									"    if (soapId && soapId.trim() !== '' && (!body.soap_note_id || body.soap_note_id.trim() === '')) {",
+									"        body.soap_note_id = soapId;",
+									"        console.log('soap_note_id automatically set in request body to:', soapId);",
+									"    }",
+									"    if (appointmentId && appointmentId.trim() !== '' && (!body.appointment_id || body.appointment_id.trim() === '')) {",
+									"        body.appointment_id = appointmentId;",
+									"        console.log('appointment_id automatically set in request body to:', appointmentId);",
+									"    }",
+									"    pm.request.body.raw = JSON.stringify(body, null, 2);",
+									"} catch (e) {",
+									"    console.error('ERROR: Failed to parse request body:', e.message);",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "POST",
 						"header": [
@@ -4711,7 +6282,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"soap_note_id\": \"\",\n  \"appointment_id\": \"\",\n  \"annotations\": [],\n  \"image_url\": \"\"\n}",
+							"raw": "{\n  \"soap_note_id\": \"{{soap_id}}\",\n  \"appointment_id\": \"{{appointment_id}}\",\n  \"annotations\": [],\n  \"image_url\": \"\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -4730,7 +6301,7 @@
 							]
 						},
 						"description": {
-							"content": "Create a body map. Request body structure depends on your body map schema.",
+							"content": "Create a body map. The `soap_note_id` and `appointment_id` fields in the request body are automatically populated from the `soap_id` and `appointment_id` environment variables (set when you call POST /api/soap and GET /api/appointments). Request body structure depends on your body map schema.",
 							"type": "text/markdown"
 						}
 					},
@@ -4989,6 +6560,33 @@
 				},
 				{
 					"name": "Upload Body Map Thumbnail",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically populate soapNoteId in request body from environment variable",
+									"const soapId = pm.environment.get('soap_id');",
+									"if (soapId && soapId.trim() !== '') {",
+									"    try {",
+									"        const body = JSON.parse(pm.request.body.raw);",
+									"        if (!body.soapNoteId || body.soapNoteId.trim() === '') {",
+									"            body.soapNoteId = soapId;",
+									"            pm.request.body.raw = JSON.stringify(body, null, 2);",
+									"            console.log('soapNoteId automatically set in request body to:', soapId);",
+									"        }",
+									"    } catch (e) {",
+									"        console.error('ERROR: Failed to parse request body:', e.message);",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: soap_id is not set in environment.');",
+									"    console.error('Please call POST /api/soap first to create a SOAP note and set the soap_id.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "POST",
 						"header": [
@@ -5005,7 +6603,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"soapNoteId\": \"\",\n  \"bodyMapId\": \"\",\n  \"fileData\": \"base64-encoded-image-data\"\n}",
+							"raw": "{\n  \"soapNoteId\": \"{{soap_id}}\",\n  \"bodyMapId\": \"\",\n  \"fileData\": \"base64-encoded-image-data\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -5026,7 +6624,7 @@
 							]
 						},
 						"description": {
-							"content": "Upload a body map thumbnail.\n\n## Required Fields:\n- `soapNoteId` (UUID) - SOAP Note ID - **REQUIRED**\n- `bodyMapId` (UUID) - Body Map ID - **REQUIRED**\n- `fileData` (string) - Base64 encoded image data - **REQUIRED**",
+							"content": "Upload a body map thumbnail. The `soapNoteId` field in the request body is automatically populated from the `soap_id` environment variable (set when you call POST /api/soap).\n\n## Required Fields:\n- `soapNoteId` (UUID) - SOAP Note ID - **REQUIRED** (automatically populated)\n- `bodyMapId` (UUID) - Body Map ID - **REQUIRED**\n- `fileData` (string) - Base64 encoded image data - **REQUIRED**",
 							"type": "text/markdown"
 						}
 					},
@@ -5072,6 +6670,32 @@
 				},
 				{
 					"name": "Create SOAP Vitals",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set soapNoteId from environment variable (set by Create SOAP Note)",
+									"const soapId = pm.environment.get('soap_id');",
+									"if (soapId && soapId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const soapNoteIdVar = url.variables.get('soapNoteId');",
+									"    if (soapNoteIdVar) {",
+									"        soapNoteIdVar.value = soapId;",
+									"        console.log('SOAP note id automatically set to:', soapId);",
+									"    } else {",
+									"        console.error('ERROR: soapNoteId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: soap_id is not set in environment.');",
+									"    console.error('Please call POST /api/soap first to create a SOAP note and set the soap_id.');",
+									"    console.error('The soap_id is automatically stored when you call Create SOAP Note.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "POST",
 						"header": [
@@ -5110,12 +6734,12 @@
 								{
 									"key": "soapNoteId",
 									"value": "",
-									"description": "SOAP Note UUID"
+									"description": "SOAP Note UUID - Automatically populated from soap_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Create vitals for a SOAP note. Request body structure depends on your vitals schema.",
+							"content": "Create vitals for a SOAP note. The `soapNoteId` parameter is automatically populated from the `soap_id` environment variable (set when you call POST /api/soap). Request body structure depends on your vitals schema.",
 							"type": "text/markdown"
 						}
 					},
@@ -5174,6 +6798,32 @@
 				},
 				{
 					"name": "Create SOAP Physical Exam",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set soapNoteId from environment variable (set by Create SOAP Note)",
+									"const soapId = pm.environment.get('soap_id');",
+									"if (soapId && soapId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const soapNoteIdVar = url.variables.get('soapNoteId');",
+									"    if (soapNoteIdVar) {",
+									"        soapNoteIdVar.value = soapId;",
+									"        console.log('SOAP note id automatically set to:', soapId);",
+									"    } else {",
+									"        console.error('ERROR: soapNoteId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: soap_id is not set in environment.');",
+									"    console.error('Please call POST /api/soap first to create a SOAP note and set the soap_id.');",
+									"    console.error('The soap_id is automatically stored when you call Create SOAP Note.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "POST",
 						"header": [
@@ -5212,12 +6862,12 @@
 								{
 									"key": "soapNoteId",
 									"value": "",
-									"description": "SOAP Note UUID"
+									"description": "SOAP Note UUID - Automatically populated from soap_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Create physical exam notes for a SOAP note. Request body structure depends on your physical exam schema.",
+							"content": "Create physical exam notes for a SOAP note. The `soapNoteId` parameter is automatically populated from the `soap_id` environment variable (set when you call POST /api/soap). Request body structure depends on your physical exam schema.",
 							"type": "text/markdown"
 						}
 					},
@@ -5547,6 +7197,32 @@
 				},
 				{
 					"name": "Get Prescriptions by Pet",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set petId from environment variable (set by Get All Pets)",
+									"const petId = pm.environment.get('pet_id');",
+									"if (petId && petId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const petIdVar = url.variables.get('petId');",
+									"    if (petIdVar) {",
+									"        petIdVar.value = petId;",
+									"        console.log('Pet id automatically set to:', petId);",
+									"    } else {",
+									"        console.error('ERROR: petId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: pet_id is not set in environment.');",
+									"    console.error('Please call GET /api/pets first to set the pet_id.');",
+									"    console.error('The pet_id is automatically stored when you call Get All Pets.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -5571,7 +7247,7 @@
 								{
 									"key": "petId",
 									"value": "",
-									"description": "Pet UUID"
+									"description": "Pet UUID - Automatically populated from pet_id environment variable"
 								}
 							]
 						},
@@ -5771,6 +7447,32 @@
 				},
 				{
 					"name": "Get Files by Pet",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set petId from environment variable (set by Get All Pets)",
+									"const petId = pm.environment.get('pet_id');",
+									"if (petId && petId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const petIdVar = url.variables.get('petId');",
+									"    if (petIdVar) {",
+									"        petIdVar.value = petId;",
+									"        console.log('Pet id automatically set to:', petId);",
+									"    } else {",
+									"        console.error('ERROR: petId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: pet_id is not set in environment.');",
+									"    console.error('Please call GET /api/pets first to set the pet_id.');",
+									"    console.error('The pet_id is automatically stored when you call Get All Pets.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -5795,7 +7497,7 @@
 								{
 									"key": "petId",
 									"value": "",
-									"description": "Pet UUID"
+									"description": "Pet UUID - Automatically populated from pet_id environment variable"
 								}
 							]
 						},
@@ -6057,6 +7759,32 @@
 				},
 				{
 					"name": "Get Tasks by Pet",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set petId from environment variable (set by Get All Pets)",
+									"const petId = pm.environment.get('pet_id');",
+									"if (petId && petId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const petIdVar = url.variables.get('petId');",
+									"    if (petIdVar) {",
+									"        petIdVar.value = petId;",
+									"        console.log('Pet id automatically set to:', petId);",
+									"    } else {",
+									"        console.error('ERROR: petId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: pet_id is not set in environment.');",
+									"    console.error('Please call GET /api/pets first to set the pet_id.');",
+									"    console.error('The pet_id is automatically stored when you call Get All Pets.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -6081,7 +7809,7 @@
 								{
 									"key": "petId",
 									"value": "",
-									"description": "Pet UUID"
+									"description": "Pet UUID - Automatically populated from pet_id environment variable"
 								}
 							]
 						},
@@ -7773,6 +9501,32 @@
 				},
 				{
 					"name": "Get Vaccinations by Pet",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set petId from environment variable (set by Get All Pets)",
+									"const petId = pm.environment.get('pet_id');",
+									"if (petId && petId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const petIdVar = url.variables.get('petId');",
+									"    if (petIdVar) {",
+									"        petIdVar.value = petId;",
+									"        console.log('Pet id automatically set to:', petId);",
+									"    } else {",
+									"        console.error('ERROR: petId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: pet_id is not set in environment.');",
+									"    console.error('Please call GET /api/pets first to set the pet_id.');",
+									"    console.error('The pet_id is automatically stored when you call Get All Pets.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -7797,7 +9551,7 @@
 								{
 									"key": "petId",
 									"value": "",
-									"description": "Pet UUID"
+									"description": "Pet UUID - Automatically populated from pet_id environment variable"
 								}
 							]
 						},
@@ -7895,6 +9649,32 @@
 			"item": [
 				{
 					"name": "Get Reminders by Pet",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set petId from environment variable (set by Get All Pets)",
+									"const petId = pm.environment.get('pet_id');",
+									"if (petId && petId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const petIdVar = url.variables.get('petId');",
+									"    if (petIdVar) {",
+									"        petIdVar.value = petId;",
+									"        console.log('Pet id automatically set to:', petId);",
+									"    } else {",
+									"        console.error('ERROR: petId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: pet_id is not set in environment.');",
+									"    console.error('Please call GET /api/pets first to set the pet_id.');",
+									"    console.error('The pet_id is automatically stored when you call Get All Pets.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -7919,7 +9699,7 @@
 								{
 									"key": "petId",
 									"value": "",
-									"description": "Pet UUID"
+									"description": "Pet UUID - Automatically populated from pet_id environment variable"
 								}
 							]
 						},
@@ -8561,6 +10341,32 @@
 				},
 				{
 					"name": "Get Pet Reports",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set petId from environment variable (set by Get All Pets)",
+									"const petId = pm.environment.get('pet_id');",
+									"if (petId && petId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const petIdVar = url.variables.get('petId');",
+									"    if (petIdVar) {",
+									"        petIdVar.value = petId;",
+									"        console.log('Pet id automatically set to:', petId);",
+									"    } else {",
+									"        console.error('ERROR: petId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: pet_id is not set in environment.');",
+									"    console.error('Please call GET /api/pets first to set the pet_id.');",
+									"    console.error('The pet_id is automatically stored when you call Get All Pets.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -8585,7 +10391,7 @@
 								{
 									"key": "petId",
 									"value": "",
-									"description": "Pet UUID"
+									"description": "Pet UUID - Automatically populated from pet_id environment variable"
 								}
 							]
 						},
@@ -9072,6 +10878,32 @@
 				},
 				{
 					"name": "Get Labs by Pet",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set petId from environment variable (set by Get All Pets)",
+									"const petId = pm.environment.get('pet_id');",
+									"if (petId && petId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const petIdVar = url.variables.get('petId');",
+									"    if (petIdVar) {",
+									"        petIdVar.value = petId;",
+									"        console.log('Pet id automatically set to:', petId);",
+									"    } else {",
+									"        console.error('ERROR: petId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: pet_id is not set in environment.');",
+									"    console.error('Please call GET /api/pets first to set the pet_id.');",
+									"    console.error('The pet_id is automatically stored when you call Get All Pets.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -9096,7 +10928,7 @@
 								{
 									"key": "petId",
 									"value": "",
-									"description": "Pet UUID"
+									"description": "Pet UUID - Automatically populated from pet_id environment variable"
 								}
 							]
 						},
@@ -10372,6 +12204,46 @@
 				},
 				{
 					"name": "Create or Get Session for Client/Pet",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Automatically set clientId and petId from environment variables",
+									"const clientId = pm.environment.get('client_id');",
+									"const petId = pm.environment.get('pet_id');",
+									"",
+									"if (clientId && clientId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const clientIdVar = url.variables.get('clientId');",
+									"    if (clientIdVar) {",
+									"        clientIdVar.value = clientId;",
+									"        console.log('Client id automatically set to:', clientId);",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: client_id is not set in environment.');",
+									"    console.error('Please call GET /api/clients first to set the client_id.');",
+									"}",
+									"",
+									"if (petId && petId.trim() !== '') {",
+									"    const url = pm.request.url;",
+									"    const petIdVar = url.variables.get('petId');",
+									"    if (petIdVar) {",
+									"        petIdVar.value = petId;",
+									"        console.log('Pet id automatically set to:', petId);",
+									"    } else {",
+									"        console.error('ERROR: petId variable not found in URL path.');",
+									"    }",
+									"} else {",
+									"    console.error('ERROR: pet_id is not set in environment.');",
+									"    console.error('Please call GET /api/pets first to set the pet_id.');",
+									"    console.error('The pet_id is automatically stored when you call Get All Pets.');",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "POST",
 						"header": [
@@ -10399,17 +12271,17 @@
 								{
 									"key": "clientId",
 									"value": "{{client_id}}",
-									"description": "Client UUID"
+									"description": "Client UUID - Automatically populated from client_id environment variable"
 								},
 								{
 									"key": "petId",
 									"value": "",
-									"description": "Pet UUID"
+									"description": "Pet UUID - Automatically populated from pet_id environment variable"
 								}
 							]
 						},
 						"description": {
-							"content": "Create or get an existing telehealth session for a client/pet (without appointment).",
+							"content": "Create or get an existing telehealth session for a client/pet (without appointment). The `clientId` and `petId` parameters are automatically populated from the `client_id` and `pet_id` environment variables (set when you call GET /api/clients and GET /api/pets).",
 							"type": "text/markdown"
 						}
 					},
@@ -10496,6 +12368,22 @@
 					"const existingOrgId = pm.environment.get('organization_id');",
 					"const existingClinicId = pm.environment.get('clinic_id');",
 					"",
+					"// Extract auth_user_id from existing token if not already set",
+					"if (existingToken && !pm.environment.get('auth_user_id')) {",
+					"    try {",
+					"        const tokenParts = existingToken.split('.');",
+					"        if (tokenParts.length === 3) {",
+					"            const payload = JSON.parse(atob(tokenParts[1]));",
+					"            if (payload.sub) {",
+					"                pm.environment.set('auth_user_id', payload.sub);",
+					"                console.log('auth_user_id extracted from existing token:', payload.sub);",
+					"            }",
+					"        }",
+					"    } catch (e) {",
+					"        console.log('Could not extract auth_user_id from existing token:', e);",
+					"    }",
+					"}",
+					"",
 					"// Check if we need to fetch token or user profile",
 					"let needToken = true;",
 					"let needUserProfile = !existingOrgId || !existingClinicId;",
@@ -10527,6 +12415,10 @@
 					"        ",
 					"        if (response.code === 200) {",
 					"            const userProfile = response.json();",
+					"            if (userProfile.id) {",
+					"                pm.environment.set('user_id', userProfile.id);",
+					"                console.log('user_id set:', userProfile.id);",
+					"            }",
 					"            if (userProfile.organization_id) {",
 					"                pm.environment.set('organization_id', userProfile.organization_id);",
 					"                console.log('organization_id set:', userProfile.organization_id);",
@@ -10572,6 +12464,20 @@
 					"                const newToken = jsonData.access_token;",
 					"                pm.environment.set('token', newToken);",
 					"                ",
+					"                // Extract auth_user_id from JWT token (sub field in payload)",
+					"                try {",
+					"                    const tokenParts = newToken.split('.');",
+					"                    if (tokenParts.length === 3) {",
+					"                        const payload = JSON.parse(atob(tokenParts[1]));",
+					"                        if (payload.sub) {",
+					"                            pm.environment.set('auth_user_id', payload.sub);",
+					"                            console.log('auth_user_id extracted from token:', payload.sub);",
+					"                        }",
+					"                    }",
+					"                } catch (e) {",
+					"                    console.log('Could not extract auth_user_id from token:', e);",
+					"                }",
+					"                ",
 					"                // Calculate token expiry (default JWT expiry is 1 hour)",
 					"                const expiresIn = jsonData.expires_in || 3600;",
 					"                const expiryTime = Math.floor(Date.now() / 1000) + expiresIn;",
@@ -10596,6 +12502,10 @@
 					"                        ",
 					"                        if (response.code === 200) {",
 					"                            const userProfile = response.json();",
+					"                            if (userProfile.id) {",
+					"                                pm.environment.set('user_id', userProfile.id);",
+					"                                console.log('user_id set:', userProfile.id);",
+					"                            }",
 					"                            if (userProfile.organization_id) {",
 					"                                pm.environment.set('organization_id', userProfile.organization_id);",
 					"                                console.log('organization_id set:', userProfile.organization_id);",

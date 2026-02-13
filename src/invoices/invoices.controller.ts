@@ -37,11 +37,18 @@ export class InvoicesController {
    * More specific route must come BEFORE less specific routes
    */
   @Get('appointment/:appointmentId')
-  findByAppointmentId(
+  @HttpCode(HttpStatus.OK)
+  async findByAppointmentId(
     @Param('appointmentId') appointmentId: string,
     @Request() req: { user: UserContext },
   ) {
-    return this.invoicesService.findByAppointmentId(appointmentId, req.user);
+    const result = await this.invoicesService.findByAppointmentId(appointmentId, req.user);
+    // Explicitly return null if no invoice found to ensure proper JSON serialization
+    // Using JSON.stringify/parse to ensure proper null serialization
+    if (result === null || result === undefined) {
+      return null;
+    }
+    return result;
   }
 
   /**

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, InternalServerErrorException, BadRequestException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreatePetDto, UpdatePetDto } from './dto';
 import { UserContext } from '../auth/auth.guard';
@@ -334,11 +334,51 @@ export class PetsService {
   }
 
   async getVaccinations(petId: string) {
-    return this.supabaseService.getPetVaccinations(petId);
+    // First verify the pet exists
+    const { data: pet, error: petError } = await this.supabaseService
+      .getClient()
+      .from('pets')
+      .select('id')
+      .eq('id', petId)
+      .maybeSingle();
+
+    if (petError) {
+      throw new InternalServerErrorException(`Failed to verify pet: ${petError.message}`);
+    }
+
+    if (!pet) {
+      throw new NotFoundException(`Pet with id ${petId} not found`);
+    }
+
+    try {
+      return await this.supabaseService.getPetVaccinations(petId);
+    } catch (error: any) {
+      // Handle table not found or feature not available
+      if (error.message?.includes('does not exist') || error.code === '42P01') {
+        throw new BadRequestException('Vaccinations feature is not available: database table does not exist');
+      }
+      // Handle other database errors
+      if (error.code) {
+        throw new InternalServerErrorException(`Failed to fetch vaccinations: ${error.message || 'Database error'}`);
+      }
+      throw error;
+    }
   }
 
   async getMedications(petId: string) {
-    return this.supabaseService.getPetMedications(petId);
+    try {
+      return await this.supabaseService.getPetMedications(petId);
+    } catch (error: any) {
+      // Handle table not found or feature not available
+      if (error.message?.includes('does not exist') || error.code === '42P01') {
+        throw new BadRequestException('Medications feature is not available: database table does not exist');
+      }
+      // Handle other database errors
+      if (error.code) {
+        throw new InternalServerErrorException(`Failed to fetch medications: ${error.message || 'Database error'}`);
+      }
+      throw error;
+    }
   }
 }
 

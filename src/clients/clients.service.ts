@@ -570,18 +570,37 @@ export class ClientsService {
   }
 
   async remove(id: string, user: UserContext) {
+    // First check if the client exists
+    const { data: existingClient, error: checkError } = await this.supabaseService
+      .getClient()
+      .from('clients')
+      .select('id')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (checkError) {
+      throw new InternalServerErrorException(`Failed to check client: ${checkError.message}`);
+    }
+
+    if (!existingClient) {
+      throw new NotFoundException(`Client with id ${id} not found`);
+    }
+
     // Perform soft delete instead of hard delete
+    // Use user.user_id (users table ID) instead of user.id (auth_user_id)
     const { error } = await this.supabaseService
       .getClient()
       .from('clients')
       .update({
         status: 'deleted',
         deleted_at: new Date().toISOString(),
-        ...(user.id && { deleted_by: user.id }),
+        ...(user.user_id && { deleted_by: user.user_id }),
       })
       .eq('id', id);
 
-    if (error) throw error;
+    if (error) {
+      throw new InternalServerErrorException(`Failed to delete client: ${error.message}`);
+    }
     return { success: true };
   }
 
@@ -664,6 +683,26 @@ export class ClientsService {
 
     if (error) {
       console.error('Error permanently deleting client:', error);
+      
+      // Check for foreign key constraint violations
+      if (error.code === '23503') {
+        // Extract which table is causing the constraint violation
+        let relatedEntity = 'related records';
+        if (error.message?.includes('appointments')) {
+          relatedEntity = 'appointments';
+        } else if (error.message?.includes('pets')) {
+          relatedEntity = 'pets';
+        } else if (error.message?.includes('invoices')) {
+          relatedEntity = 'invoices';
+        } else if (error.message?.includes('client_notes')) {
+          relatedEntity = 'client notes';
+        }
+        
+        throw new ConflictException(
+          `Cannot permanently delete client: This client has ${relatedEntity} associated with it. Please delete or reassign the ${relatedEntity} first, or use soft delete instead.`
+        );
+      }
+      
       throw new InternalServerErrorException(
         `Failed to permanently delete client: ${error.message || 'Unknown error'}`,
       );
@@ -799,13 +838,30 @@ export class ClientsService {
       if (error.code === 'PGRST116') {
         throw new NotFoundException(`Client note with id ${noteId} not found`);
       }
-      throw new Error(`Failed to update client note: ${error.message}`);
+      throw new InternalServerErrorException(`Failed to update client note: ${error.message}`);
     }
 
     return data;
   }
 
   async deleteClientNote(noteId: string) {
+    // First check if the note exists
+    const { data: existingNote, error: checkError } = await this.supabaseService
+      .getClient()
+      .from('client_notes')
+      .select('id')
+      .eq('id', noteId)
+      .maybeSingle();
+
+    if (checkError) {
+      throw new InternalServerErrorException(`Failed to check client note: ${checkError.message}`);
+    }
+
+    if (!existingNote) {
+      throw new NotFoundException(`Client note with id ${noteId} not found`);
+    }
+
+    // Now delete the note
     const { error } = await this.supabaseService
       .getClient()
       .from('client_notes')
@@ -813,7 +869,7 @@ export class ClientsService {
       .eq('id', noteId);
 
     if (error) {
-      throw new Error(`Failed to delete client note: ${error.message}`);
+      throw new InternalServerErrorException(`Failed to delete client note: ${error.message}`);
     }
 
     return { success: true };

@@ -671,19 +671,28 @@ export class AppointmentsService {
     user: UserContext,
   ) {
     // Validate user has access to this client's clinic
+    // Note: clients table uses 'clinic_id', not 'tenant_id'
     const { data: client, error: clientError } = await this.supabaseService
       .getClient()
       .from('clients')
-      .select('tenant_id')
+      .select('clinic_id, organization_id, status')
       .eq('id', clientId)
-      .single();
+      .or('status.is.null,status.neq.deleted') // Exclude soft-deleted clients
+      .maybeSingle();
 
-    if (clientError || !client) {
+    if (clientError) {
+      if (clientError.code === 'PGRST116') {
+        throw new NotFoundException(`Client with id ${clientId} not found`);
+      }
+      throw new InternalServerErrorException(`Failed to fetch client: ${clientError.message}`);
+    }
+
+    if (!client) {
       throw new NotFoundException(`Client with id ${clientId} not found`);
     }
 
     // Validate clinic access
-    if (client.tenant_id && user?.clinic_id !== client.tenant_id && user?.role !== 'super_admin') {
+    if (client.clinic_id && user?.clinic_id !== client.clinic_id && user?.role !== 'super_admin') {
       throw new ForbiddenException('Access denied: You do not have access to this client');
     }
 
@@ -960,15 +969,17 @@ export class AppointmentsService {
     } catch (error) {
       console.error('Error sending confirmation email:', error);
       
-      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+      // Re-throw HTTP exceptions (they should return proper status codes)
+      if (error instanceof NotFoundException || 
+          error instanceof BadRequestException || 
+          error instanceof InternalServerErrorException) {
         throw error;
       }
 
-      return {
-        success: false,
-        message: 'Failed to send confirmation email',
-        error: error instanceof Error ? error.message : 'Unknown error occurred',
-      };
+      // For unexpected errors, return 500
+      throw new InternalServerErrorException(
+        `Failed to send confirmation email: ${error instanceof Error ? error.message : 'Unknown error occurred'}`
+      );
     }
   }
 
@@ -1026,6 +1037,14 @@ export class AppointmentsService {
 
     if (error) {
       console.error('Error updating overdue appointments:', error);
+      
+      // Handle check constraint violations (23514)
+      if (error.code === '23514') {
+        throw new BadRequestException(
+          `Cannot update appointment status: ${error.message || 'Status value violates database constraint. The status "no_show" may not be allowed for these appointments, or the appointments may not meet the required conditions for status update.'}`
+        );
+      }
+      
       throw new InternalServerErrorException(
         `Failed to update overdue appointments: ${error.message || 'Unknown error'}`,
       );
@@ -1073,11 +1092,11 @@ export class AppointmentsService {
           species,
           clients(
             id,
+            phone,
             users!clients_user_id_fkey(
               id,
               full_name,
-              email,
-              phone
+              email
             )
           )
         ),

@@ -55,6 +55,11 @@ export class UsersController {
     return this.usersService.getVeterinarians(clinicId, user);
   }
 
+  @Get('states')
+  getStates() {
+    return this.usersService.getStates();
+  }
+
   @Get('email/:email')
   findByEmail(@Param('email') email: string) {
     return this.usersService.findByEmail(email);
@@ -143,11 +148,6 @@ export class UsersController {
   @HttpCode(HttpStatus.OK)
   hardDelete(@Param('id') id: string, @GetUser() user: any) {
     return this.usersService.hardDelete(id, user);
-  }
-
-  @Get('states')
-  getStates() {
-    return this.usersService.getStates();
   }
 
   @Get(':id/licensed-states')

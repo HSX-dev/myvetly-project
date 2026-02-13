@@ -7,22 +7,27 @@ import {
   IsEnum,
   IsNumber,
   IsBoolean,
+  ValidateIf,
 } from 'class-validator';
 import { AppointmentStatus } from '../../utils/enums';
 
 export class CreateAppointmentDto {
   // Optional for Block appointments
+  // Validate UUID only if value is provided and not empty string
   @Expose()
+  @ValidateIf((o) => o.pet_id !== '' && o.pet_id != null)
   @IsUUID()
   @IsOptional()
   pet_id?: string;
 
   @Expose()
+  @ValidateIf((o) => o.client_id !== '' && o.client_id != null)
   @IsUUID()
   @IsOptional()
   client_id?: string;
 
   @Expose()
+  @ValidateIf((o) => o.vet_id !== '' && o.vet_id != null)
   @IsUUID()
   @IsOptional()
   vet_id?: string;

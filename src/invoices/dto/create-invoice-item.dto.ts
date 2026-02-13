@@ -1,4 +1,4 @@
-import { IsNumber, IsString, IsUUID, IsOptional, IsNotEmpty } from 'class-validator';
+import { IsNumber, IsString, IsUUID, IsOptional, IsNotEmpty, ValidateIf } from 'class-validator';
 import { Expose } from 'class-transformer';
 
 export class CreateInvoiceItemDto {
@@ -8,8 +8,9 @@ export class CreateInvoiceItemDto {
   quantity: number;
 
   @Expose()
-  @IsUUID()
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'service_id is required and cannot be an empty string' })
+  @IsString({ message: 'service_id must be a string' })
+  @IsUUID('4', { message: 'service_id must be a valid UUID' })
   service_id: string;
 
   @Expose()
