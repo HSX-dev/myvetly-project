@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, InternalServerErrorException, ConflictException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreateClinicDto, UpdateClinicDto, CreateClinicServiceDto, UpdateClinicServiceDto } from './dto';
 import { UserContext } from '../auth/auth.guard';
@@ -89,10 +89,17 @@ export class ClinicsService {
       throw new NotFoundException('Clinic not found or access denied');
     }
 
+    // Map 'email' field to 'contact_email' if provided (clinics table uses contact_email, not email)
+    const updateData: any = { ...updateClinicDto };
+    if (updateData.email !== undefined) {
+      updateData.contact_email = updateData.email;
+      delete updateData.email; // Remove email field as it doesn't exist in clinics table
+    }
+
     const { data, error } = await this.supabaseService
       .getClient()
       .from('clinics')
-      .update(updateClinicDto)
+      .update(updateData)
       .eq('id', id)
       .select()
       .single();
@@ -108,7 +115,33 @@ export class ClinicsService {
       .delete()
       .eq('id', id);
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error deleting clinic:', error);
+      
+      // Check for foreign key constraint violations
+      if (error.code === '23503') {
+        // Extract which table is causing the constraint violation
+        let relatedEntity = 'related records';
+        if (error.message?.includes('appointments')) {
+          relatedEntity = 'appointments';
+        } else if (error.message?.includes('users')) {
+          relatedEntity = 'users';
+        } else if (error.message?.includes('clients')) {
+          relatedEntity = 'clients';
+        } else if (error.message?.includes('services')) {
+          relatedEntity = 'services';
+        }
+        
+        throw new ConflictException(
+          `Cannot delete clinic: This clinic has ${relatedEntity} associated with it. Please delete or reassign the ${relatedEntity} first.`
+        );
+      }
+      
+      throw new InternalServerErrorException(
+        `Failed to delete clinic: ${error.message || 'Unknown error'}`,
+      );
+    }
+    
     return { success: true };
   }
 
@@ -118,14 +151,38 @@ export class ClinicsService {
       throw new NotFoundException('Clinic not found or access denied');
     }
     
+    // Fetch users with roles, excluding deleted users and clients
     const { data, error } = await this.supabaseService
       .getClient()
       .from('users')
       .select('role')
-      .eq('clinic_id', clinicId);
+      .eq('clinic_id', clinicId)
+      .neq('role', 'client') // Exclude clients
+      .neq('status', 'deleted'); // Exclude soft-deleted users
 
     if (error) throw error;
-    return data;
+
+    // Count occurrences of each role (case-insensitive)
+    // Use lowercase for counting, but preserve original role name for the first occurrence
+    const roleCounts: Record<string, number> = {};
+    const roleNameMap: Record<string, string> = {}; // Maps lowercase to original case
+    
+    (data || []).forEach((user: { role: string }) => {
+      if (user.role) {
+        const normalizedRole = user.role.toLowerCase();
+        // Store the first occurrence's original case
+        if (!roleNameMap[normalizedRole]) {
+          roleNameMap[normalizedRole] = user.role;
+        }
+        roleCounts[normalizedRole] = (roleCounts[normalizedRole] || 0) + 1;
+      }
+    });
+
+    // Convert to array of { role, count } objects, using original case from first occurrence
+    return Object.entries(roleCounts).map(([normalizedRole, count]) => ({
+      role: roleNameMap[normalizedRole], // Use original case
+      count,
+    }));
   }
 
   async getUsersByClinic(clinicId: string, user: any) {
@@ -158,6 +215,7 @@ export class ClinicsService {
       `)
       .eq('clinic_id', clinicId)
       .neq('role', 'client')
+      .neq('status', 'deleted') // Exclude soft-deleted users
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -255,7 +313,9 @@ export class ClinicsService {
     const { data, error } = await query;
 
     if (error) throw error;
-    return data;
+    
+    // Ensure we always return an array, even if there's only one service or no services
+    return Array.isArray(data) ? data : [];
   }
 
   async createClinicService(clinicId: string, createDto: CreateClinicServiceDto, user: UserContext) {

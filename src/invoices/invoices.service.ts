@@ -11,7 +11,7 @@ export class InvoicesService {
     const { data, error } = await this.supabaseService
       .getClient()
       .from('invoices')
-      .select('*, clients(*), pets(*)')
+      .select('*, clients(*)')
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -147,6 +147,26 @@ export class InvoicesService {
       throw new ForbiddenException('Access denied: You do not have access to this pet');
     }
 
+    // First, get all appointments for this pet
+    const { data: appointments, error: appointmentsError } = await this.supabaseService
+      .getClient()
+      .from('appointments')
+      .select('id')
+      .eq('pet_id', petId);
+
+    if (appointmentsError) {
+      throw new InternalServerErrorException(`Failed to fetch appointments: ${appointmentsError.message}`);
+    }
+
+    // If no appointments found, return empty array
+    if (!appointments || appointments.length === 0) {
+      return [];
+    }
+
+    // Extract appointment IDs
+    const appointmentIds = appointments.map((apt: any) => apt.id);
+
+    // Then, get all invoices for these appointments
     const { data, error } = await this.supabaseService
       .getClient()
       .from('invoices')
@@ -166,11 +186,14 @@ export class InvoicesService {
           pet_id
         )
       `)
-      .eq('pet_id', petId)
+      .in('appointment_id', appointmentIds)
       .order('created_at', { ascending: false });
 
-    if (error) throw error;
-    return data;
+    if (error) {
+      throw new InternalServerErrorException(`Failed to fetch invoices: ${error.message}`);
+    }
+
+    return data || [];
   }
 
   /**
@@ -227,7 +250,15 @@ export class InvoicesService {
       throw new InternalServerErrorException(`Failed to get invoice: ${error.message}`);
     }
 
-    return data as any | null; // maybeSingle() returns null if no rows found
+    // Log for debugging
+    console.log('findByAppointmentId - data:', data, 'type:', typeof data, 'isNull:', data === null);
+
+    // Return null explicitly if no data found
+    if (data === null || data === undefined) {
+      return null;
+    }
+
+    return data;
   }
 
   /**
@@ -373,6 +404,19 @@ export class InvoicesService {
   ): Promise<any[]> {
     if (!user) throw new BadRequestException('Missing User Data!');
 
+    // Validate that service_id is not empty for each item
+    for (let i = 0; i < createInvoiceItemDtos.length; i++) {
+      const dto = createInvoiceItemDtos[i];
+      if (!dto.service_id || dto.service_id.trim() === '') {
+        throw new BadRequestException(`service_id is required and cannot be empty for item at index ${i}`);
+      }
+      // Validate UUID format
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(dto.service_id)) {
+        throw new BadRequestException(`service_id must be a valid UUID for item at index ${i}. Received: "${dto.service_id}"`);
+      }
+    }
+
     // Get invoice to get client_id
     const invoice = await this.findOne(invoiceId, user);
     if (!invoice) {
@@ -395,7 +439,20 @@ export class InvoicesService {
       .insert(itemsToInsert)
       .select('*');
 
-    if (error) throw new InternalServerErrorException(`Failed to create invoice items: ${error.message}`);
+    if (error) {
+      // Check for invalid UUID errors (22P02 is PostgreSQL error code for invalid input syntax)
+      if (error.message && error.message.includes('invalid input syntax for type uuid')) {
+        throw new BadRequestException('Invalid UUID format. service_id must be a valid UUID and cannot be empty.');
+      }
+      // Check for other constraint violations
+      if (error.code === '23503') {
+        throw new BadRequestException(`Foreign key constraint violation: ${error.message}`);
+      }
+      if (error.code === '23502') {
+        throw new BadRequestException(`Required field missing: ${error.message}`);
+      }
+      throw new InternalServerErrorException(`Failed to create invoice items: ${error.message}`);
+    }
 
     return data as any[];
   }

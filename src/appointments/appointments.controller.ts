@@ -110,7 +110,6 @@ export class AppointmentsController {
   }
 
   @Post('send-confirmation-email')
-  @HttpCode(HttpStatus.OK)
   sendConfirmationEmail(@Body(CleanDtoPipe) sendConfirmationDto: SendConfirmationEmailDto) {
     return this.appointmentsService.sendConfirmationEmail(sendConfirmationDto);
   }

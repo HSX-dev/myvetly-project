@@ -169,7 +169,13 @@ export class SupabaseService {
       .eq('pet_id', petId)
       .order('date_administered', { ascending: false });
 
-    if (error) throw error;
+    if (error) {
+      // Handle table not found error (42P01)
+      if (error.code === '42P01') {
+        throw new Error('Vaccinations feature is not available: database table does not exist');
+      }
+      throw error;
+    }
     return data || [];
   }
 
@@ -181,7 +187,13 @@ export class SupabaseService {
       .eq('pet_id', petId)
       .order('created_at', { ascending: false });
 
-    if (error) throw error;
+    if (error) {
+      // Handle table not found error (42P01)
+      if (error.code === '42P01') {
+        throw new Error('Medications feature is not available: database table does not exist');
+      }
+      throw error;
+    }
     return data || [];
   }
 }

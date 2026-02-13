@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, InternalServerErrorException, BadGatewayException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { UserContext } from '../auth/auth.guard';
 import { AiService } from '../ai/ai.service';
@@ -335,7 +335,7 @@ export class SoapService {
       .from('soap_notes')
       .insert({
         ...data,
-        created_by: user.id,
+        created_by: user.user_id, // Use user.user_id (users.id) instead of user.id (auth_user_id)
         pet_id: appointment.pet_id,
       })
       .select(`
@@ -348,7 +348,13 @@ export class SoapService {
       `)
       .single();
 
-    if (error) throw error;
+    if (error) {
+      // Check for foreign key violation
+      if (error.code === '23503') {
+        throw new BadRequestException(`Failed to create SOAP note: ${error.message}. Ensure the user exists in the users table.`);
+      }
+      throw new InternalServerErrorException(`Failed to create SOAP note: ${error.message}`);
+    }
     return soapNote;
   }
 
@@ -818,14 +824,40 @@ export class SoapService {
       throw new ForbiddenException('Access denied: You do not have access to this SOAP note');
     }
 
-    const result = await this.aiService.expandSoap(
-      {
-        appointment_id: appointment.id,
-        section,
-        current_data: currentData,
-      },
-      user.auth_user_id,
-    );
+    let result: any;
+    try {
+      result = await this.aiService.expandSoap(
+        {
+          appointment_id: appointment.id,
+          section,
+          current_data: currentData,
+        },
+        user.auth_user_id,
+      );
+    } catch (error: any) {
+      // Handle AI service errors (e.g., DeepSeek API authentication failures)
+      const errorMessage = error?.message || 'Unknown error';
+      
+      // Check for authentication errors (401) or other API errors
+      if (errorMessage.includes('401') || errorMessage.includes('Authentication') || errorMessage.includes('api key')) {
+        throw new BadGatewayException(
+          'AI service authentication failed. Please check the AI service API key configuration. ' +
+          'Original error: ' + errorMessage
+        );
+      }
+      
+      // Check for other HTTP errors from the AI service
+      if (errorMessage.includes('API error') || errorMessage.includes('error:')) {
+        throw new BadGatewayException(
+          'AI service error: ' + errorMessage
+        );
+      }
+      
+      // For other unexpected errors, throw as internal server error
+      throw new InternalServerErrorException(
+        `Failed to expand SOAP note: ${errorMessage}`
+      );
+    }
 
     // Update the SOAP note with the expanded content
     await this.supabaseService
@@ -1473,17 +1505,56 @@ export class SoapService {
    * Create treatment plan
    */
   async createTreatmentPlan(data: any, user: UserContext): Promise<any> {
-    // Validate appointment access
-    if (data.appointment_id) {
+    // Map treatment_description to description if provided
+    const treatmentPlanData: any = { ...data };
+    if (treatmentPlanData.treatment_description !== undefined && treatmentPlanData.description === undefined) {
+      treatmentPlanData.description = treatmentPlanData.treatment_description;
+      delete treatmentPlanData.treatment_description;
+    }
+
+    // Optimize: Only fetch from SOAP note if appointment_id is not provided
+    // This avoids unnecessary API calls when frontend already has appointment_id
+    let appointmentIdFromSoap: string | undefined;
+    if (!treatmentPlanData.appointment_id && treatmentPlanData.soap_note_id) {
+      const { data: soapNote, error: soapError } = await this.supabaseService
+        .getClient()
+        .from('soap_notes')
+        .select('appointment_id, pet_id, appointments!inner(tenant_id)')
+        .eq('id', treatmentPlanData.soap_note_id)
+        .single();
+
+      if (soapError || !soapNote) {
+        throw new NotFoundException(`SOAP note with id ${treatmentPlanData.soap_note_id} not found`);
+      }
+
+      const appointment = (soapNote as any).appointments;
+      if (appointment?.tenant_id && user.clinic_id !== appointment.tenant_id) {
+        throw new ForbiddenException('Access denied: You do not have access to this SOAP note');
+      }
+
+      // Store appointment_id and pet_id from SOAP note for later use
+      appointmentIdFromSoap = soapNote.appointment_id;
+      if (!treatmentPlanData.pet_id && soapNote.pet_id) {
+        treatmentPlanData.pet_id = soapNote.pet_id;
+      }
+    }
+
+    // Set appointment_id from SOAP note if not provided
+    if (!treatmentPlanData.appointment_id && appointmentIdFromSoap) {
+      treatmentPlanData.appointment_id = appointmentIdFromSoap;
+    }
+
+    // Validate appointment access if appointment_id is provided
+    if (treatmentPlanData.appointment_id) {
       const { data: appointment, error: appointmentError } = await this.supabaseService
         .getClient()
         .from('appointments')
         .select('tenant_id')
-        .eq('id', data.appointment_id)
+        .eq('id', treatmentPlanData.appointment_id)
         .single();
 
       if (appointmentError || !appointment) {
-        throw new Error(`Appointment with id ${data.appointment_id} not found`);
+        throw new NotFoundException(`Appointment with id ${treatmentPlanData.appointment_id} not found`);
       }
 
       // Validate clinic access
@@ -1492,37 +1563,40 @@ export class SoapService {
       }
     }
 
-    // If soap_note_id is provided, validate access
-    if (data.soap_note_id) {
-      const { data: soapNote, error: soapError } = await this.supabaseService
-        .getClient()
-        .from('soap_notes')
-        .select('appointment_id, appointments!inner(tenant_id)')
-        .eq('id', data.soap_note_id)
-        .single();
+    // Set required fields if not provided
+    if (!treatmentPlanData.created_by) {
+      treatmentPlanData.created_by = user.user_id; // Use user.user_id (users.id) instead of user.id (auth_user_id)
+    }
+    if (!treatmentPlanData.clinic_id && user.clinic_id) {
+      treatmentPlanData.clinic_id = user.clinic_id;
+    }
 
-      if (soapError || !soapNote) {
-        throw new Error(`SOAP note with id ${data.soap_note_id} not found`);
-      }
-
-      const appointment = (soapNote as any).appointments;
-      if (appointment?.tenant_id && user.clinic_id !== appointment.tenant_id) {
-        throw new ForbiddenException('Access denied: You do not have access to this SOAP note');
-      }
+    // Validate required fields
+    if (!treatmentPlanData.appointment_id) {
+      throw new BadRequestException('appointment_id is required. Either provide it directly or provide soap_note_id to automatically retrieve it.');
+    }
+    if (!treatmentPlanData.treatment_name) {
+      throw new BadRequestException('treatment_name is required.');
+    }
+    if (!treatmentPlanData.status) {
+      throw new BadRequestException('status is required.');
     }
 
     // Create treatment plan
     const { data: treatmentPlan, error } = await this.supabaseService
       .getClient()
       .from('treatment_plans')
-      .insert(data)
+      .insert(treatmentPlanData)
       .select(`
         *,
-        medications(*)
+        product_service:clinic_services!service_id(id, price, price_setting, service_name, details),
+        created_by_doc:users!created_by(id, full_name)
       `)
       .single();
 
-    if (error) throw error;
+    if (error) {
+      throw new InternalServerErrorException(`Failed to create treatment plan: ${error.message}`);
+    }
     return treatmentPlan;
   }
 
@@ -1539,7 +1613,7 @@ export class SoapService {
       .single();
 
     if (treatmentError || !treatmentPlan) {
-      throw new Error(`Treatment plan with id ${id} not found`);
+      throw new NotFoundException(`Treatment plan with id ${id} not found`);
     }
 
     // Validate clinic access via appointment or SOAP note
@@ -1579,7 +1653,7 @@ export class SoapService {
     }
 
     if (!hasAccess) {
-      throw new Error('Access denied: You do not have access to this treatment plan');
+      throw new ForbiddenException('Access denied: You do not have access to this treatment plan');
     }
 
     // Update treatment plan
@@ -1590,11 +1664,14 @@ export class SoapService {
       .eq('id', id)
       .select(`
         *,
-        medications(*)
+        product_service:clinic_services!service_id(id, price, price_setting, service_name, details),
+        created_by_doc:users!created_by(id, full_name)
       `)
       .single();
 
-    if (error) throw error;
+    if (error) {
+      throw new InternalServerErrorException(`Failed to update treatment plan status: ${error.message}`);
+    }
     return updatedPlan;
   }
 

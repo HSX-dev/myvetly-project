@@ -10,6 +10,7 @@ export class UsersService {
   /**
    * Get all users with RLS filtering based on user role
    * Excludes 'client' role users (clients are managed separately)
+   * Excludes soft-deleted users (status = 'deleted')
    */
   async findAll(user: UserContext) {
     const userQuery = `
@@ -38,6 +39,9 @@ export class UsersService {
 
     // IMPORTANT: Exclude clients - User Management is for staff only
     query = query.neq('role', 'client');
+
+    // IMPORTANT: Exclude soft-deleted users
+    query = query.neq('status', 'deleted');
 
     // Apply RLS filtering based on user role
     if (user.role === 'org_admin') {
@@ -700,6 +704,11 @@ export class UsersService {
     delete (updateData as any).password;
     delete (updateData as any).confirm_password;
 
+    // Extract phone field - it's stored in clients table, not users table
+    const phoneToUpdate = (updateData as any).phone;
+    delete (updateData as any).phone;
+
+    // Update user record (without phone)
     const { data, error } = await this.supabaseService
       .getClient()
       .from('users')
@@ -731,6 +740,21 @@ export class UsersService {
         `Failed to update user: ${error.message || 'Unknown error'}`,
       );
     }
+
+    // If phone was provided, update it in the clients table (if user is a client)
+    if (phoneToUpdate !== undefined) {
+      const { error: clientUpdateError } = await this.supabaseService
+        .getClient()
+        .from('clients')
+        .update({ phone: phoneToUpdate })
+        .eq('user_id', id);
+
+      if (clientUpdateError) {
+        // Log but don't fail - phone update is optional and user might not be a client
+        console.warn('Could not update phone in clients table (user might not be a client):', clientUpdateError.message);
+      }
+    }
+
     return data;
   }
 
@@ -925,6 +949,28 @@ export class UsersService {
 
     if (error) {
       console.error('Error permanently deleting user:', error);
+      
+      // Check for foreign key constraint violations
+      if (error.code === '23503') {
+        // Extract which table is causing the constraint violation
+        let relatedEntity = 'related records';
+        if (error.message?.includes('appointments')) {
+          relatedEntity = 'appointments';
+        } else if (error.message?.includes('pets')) {
+          relatedEntity = 'pets';
+        } else if (error.message?.includes('clients')) {
+          relatedEntity = 'clients';
+        } else if (error.message?.includes('schedules')) {
+          relatedEntity = 'schedules';
+        } else if (error.message?.includes('licensed_states')) {
+          relatedEntity = 'licensed states';
+        }
+        
+        throw new ConflictException(
+          `Cannot permanently delete user: This user has ${relatedEntity} associated with it. Please delete or reassign the ${relatedEntity} first, or use soft delete instead.`
+        );
+      }
+      
       throw new InternalServerErrorException(
         `Failed to permanently delete user: ${error.message || 'Unknown error'}`,
       );
@@ -1133,7 +1179,8 @@ export class UsersService {
       .from('users')
       .select(userQuery)
       .eq('organization_id', user.organization_id)
-      .neq('role', 'client'); // Exclude clients
+      .neq('role', 'client') // Exclude clients
+      .neq('status', 'deleted'); // Exclude soft-deleted users
 
     // Exclude users who are already clients
     if (clientUserIds.length > 0) {
