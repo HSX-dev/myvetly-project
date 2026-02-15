@@ -80,6 +80,33 @@ export class RolesController {
     @Body(CleanDtoPipe) createDto: CreateClinicUserRoleDto,
     @GetUser() user: UserContext,
   ) {
+    // Fallback for field name mapping if DTO transform didn't catch it
+    if (createDto.role_name && !createDto.name) {
+      createDto.name = createDto.role_name;
+    }
+    
+    // Fallback for permissions array if individual access arrays are not provided
+    if (createDto.permissions && Array.isArray(createDto.permissions)) {
+      if (!createDto.admin_controls || createDto.admin_controls.length === 0) {
+        createDto.admin_controls = createDto.permissions;
+      }
+      if (!createDto.view_access || createDto.view_access.length === 0) {
+        createDto.view_access = createDto.permissions;
+      }
+      if (!createDto.create_access || createDto.create_access.length === 0) {
+        createDto.create_access = createDto.permissions;
+      }
+      if (!createDto.edit_access || createDto.edit_access.length === 0) {
+        createDto.edit_access = createDto.permissions;
+      }
+      if (!createDto.cancel_access || createDto.cancel_access.length === 0) {
+        createDto.cancel_access = createDto.permissions;
+      }
+      if (!createDto.delete_access || createDto.delete_access.length === 0) {
+        createDto.delete_access = createDto.permissions;
+      }
+    }
+    
     return this.rolesService.createClinicUserRole(createDto, user);
   }
 

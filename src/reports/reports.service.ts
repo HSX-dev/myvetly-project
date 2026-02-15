@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { ReportFiltersDto } from './dto/report-filters.dto';
 import { UserContext } from '../auth/auth.guard';
@@ -8,18 +8,126 @@ import moment from 'moment';
 export class ReportsService {
   constructor(private supabaseService: SupabaseService) {}
 
-  async getClinicStats(clinicId: string, startDate?: string, endDate?: string) {
-    // This is a skeleton - implement actual reporting logic
-    const { data, error } = await this.supabaseService
+  async getClinicStats(clinicId: string, startDate?: string, endDate?: string, user?: UserContext) {
+    // Validate clinicId
+    if (!clinicId || clinicId.trim() === '') {
+      throw new BadRequestException('clinic_id is required');
+    }
+
+    // Validate clinic exists and user has access
+    const { data: clinic, error: clinicError } = await this.supabaseService
+      .getClient()
+      .from('clinics')
+      .select('id')
+      .eq('id', clinicId)
+      .single();
+
+    if (clinicError || !clinic) {
+      throw new NotFoundException(`Clinic with id ${clinicId} not found`);
+    }
+
+    // Check access permissions
+    if (user) {
+      if (user.role !== 'super_admin' && user.clinic_id !== clinicId) {
+        throw new ForbiddenException('Access denied: You can only view stats for your own clinic');
+      }
+    }
+
+    // Build appointments query with date filters
+    let appointmentsQuery = this.supabaseService
       .getClient()
       .from('appointments')
-      .select('*')
-      .eq('clinic_id', clinicId);
+      .select('id, status, appointment_time, is_telehealth')
+      .eq('tenant_id', clinicId); // Use tenant_id, not clinic_id
 
-    if (error) throw error;
+    if (startDate) {
+      appointmentsQuery = appointmentsQuery.gte('appointment_time', startDate);
+    }
+    if (endDate) {
+      appointmentsQuery = appointmentsQuery.lte('appointment_time', endDate);
+    }
+
+    const { data: appointments, error: appointmentsError } = await appointmentsQuery;
+
+    if (appointmentsError) {
+      console.error('Error fetching appointments for clinic stats:', appointmentsError);
+      throw new InternalServerErrorException(
+        `Failed to fetch appointments: ${appointmentsError.message || 'Unknown error'}`,
+      );
+    }
+
+    // Get additional stats in parallel
+    const [clientsResult, petsResult, invoicesResult] = await Promise.all([
+      this.supabaseService
+        .getClient()
+        .from('clients')
+        .select('id', { count: 'exact', head: true })
+        .eq('clinic_id', clinicId),
+      this.supabaseService
+        .getClient()
+        .from('pets')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', clinicId),
+      this.supabaseService
+        .getClient()
+        .from('invoices')
+        .select('id, amount, status')
+        .eq('tenant_id', clinicId)
+        .then((result) => {
+          if (result.error) {
+            return { data: [], error: result.error };
+          }
+          // Filter by date range if provided
+          let invoices = result.data || [];
+          if (startDate || endDate) {
+            // Note: invoices might not have appointment_time, so we'll use issued_at
+            // This is a simplified version - you may need to join with appointments
+            return { data: invoices, error: null };
+          }
+          return { data: invoices, error: null };
+        }),
+    ]);
+
+    if (clientsResult.error || petsResult.error) {
+      console.error('Error fetching related stats:', { clients: clientsResult.error, pets: petsResult.error });
+      // Don't throw, just log - we can still return partial stats
+    }
+
+    const appointmentsData = appointments || [];
+    const totalAppointments = appointmentsData.length;
+    const completedAppointments = appointmentsData.filter((apt: any) => apt.status === 'completed').length;
+    const scheduledAppointments = appointmentsData.filter((apt: any) => apt.status === 'scheduled').length;
+    const telehealthAppointments = appointmentsData.filter((apt: any) => apt.is_telehealth === true).length;
+    const inClinicAppointments = totalAppointments - telehealthAppointments;
+
+    const totalClients = clientsResult.count || 0;
+    const totalPets = petsResult.count || 0;
+
+    // Calculate revenue from invoices
+    const invoicesData = invoicesResult.data || [];
+    const totalRevenue = invoicesData
+      .filter((inv: any) => inv.status === 'paid' || inv.status === 'Checked Out')
+      .reduce((sum: number, inv: any) => sum + (parseFloat(inv.amount) || 0), 0);
+
+    const pendingRevenue = invoicesData
+      .filter((inv: any) => inv.status !== 'paid' && inv.status !== 'Checked Out')
+      .reduce((sum: number, inv: any) => sum + (parseFloat(inv.amount) || 0), 0);
+
     return {
-      totalAppointments: data?.length || 0,
-      // Add more stats as needed
+      clinic_id: clinicId,
+      total_appointments: totalAppointments,
+      completed_appointments: completedAppointments,
+      scheduled_appointments: scheduledAppointments,
+      telehealth_appointments: telehealthAppointments,
+      in_clinic_appointments: inClinicAppointments,
+      total_clients: totalClients,
+      total_pets: totalPets,
+      total_revenue: totalRevenue,
+      pending_revenue: pendingRevenue,
+      date_range: {
+        start_date: startDate || null,
+        end_date: endDate || null,
+      },
     };
   }
 

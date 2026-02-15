@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, InternalServerErrorException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, InternalServerErrorException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreateTaskDto, UpdateTaskDto } from './dto/index';
 import { UserContext } from '../auth/auth.guard';
@@ -561,6 +561,28 @@ export class TasksService {
     // First, get the task to validate access
     await this.findOne(id, user);
 
+    // Try to set deleted_by first if the column exists (for database triggers that reference it)
+    // This ensures the trigger can access OLD.deleted_by during DELETE
+    const { error: updateError } = await this.supabaseService
+      .getClient()
+      .from('tasks')
+      .update({ deleted_by: user.user_id })
+      .eq('id', id);
+
+    // If update fails because deleted_by column doesn't exist, skip it and try delete anyway
+    // The delete might still work if the trigger handles missing deleted_by gracefully
+    if (updateError) {
+      if (updateError.message && (updateError.message.includes('deleted_by') || updateError.message.includes('column'))) {
+        // Column doesn't exist - log warning but continue with delete attempt
+        // The trigger might handle this, or we'll get a clear error
+        console.warn('Warning: deleted_by column does not exist in tasks table. Attempting delete anyway...');
+      } else {
+        // Some other update error - log it but continue with delete attempt
+        console.warn('Warning: Could not set deleted_by before delete:', updateError.message);
+      }
+    }
+
+    // Perform the delete
     const { error } = await this.supabaseService
       .getClient()
       .from('tasks')
@@ -568,6 +590,14 @@ export class TasksService {
       .eq('id', id);
 
     if (error) {
+      // Check if error is related to deleted_by field (database trigger issue)
+      if (error.message && error.message.includes('deleted_by')) {
+        // Return BadRequest (400) instead of InternalServerError (500) since this is a schema/configuration issue
+        throw new BadRequestException(
+          `Cannot delete task: The database trigger requires a 'deleted_by' column in the tasks table, but this column doesn't exist. This is a database configuration issue that needs to be fixed by adding the column or updating the trigger.`,
+        );
+      }
+      
       console.error('Error deleting task:', error);
       throw new InternalServerErrorException(
         `Failed to delete task: ${error.message || 'Unknown error'}`,

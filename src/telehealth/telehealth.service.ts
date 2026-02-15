@@ -545,6 +545,11 @@ export class TelehealthService {
   async sendMessage(sendMessageDto: SendMessageDto, user: UserContext): Promise<any> {
     const { session_id, content, message_type = 'text', media_url, file_name, file_size } = sendMessageDto;
 
+    // Validate that session_id is provided (should always be set by controller from URL parameter)
+    if (!session_id) {
+      throw new BadRequestException('Session ID is required');
+    }
+
     // Validate that at least content or media_url is provided
     if (!content && !media_url) {
       throw new BadRequestException('Either content or media_url must be provided');
@@ -657,6 +662,21 @@ export class TelehealthService {
       status?: 'scheduled' | 'waiting';
     }
   ): Promise<any> {
+    // Validate required fields (frontend always provides these to avoid extra API call)
+    if (!sessionData.vet_id || sessionData.vet_id.trim() === '') {
+      throw new BadRequestException('vet_id is required');
+    }
+    if (!sessionData.pet_id || sessionData.pet_id.trim() === '') {
+      throw new BadRequestException('pet_id is required');
+    }
+    if (!sessionData.client_id || sessionData.client_id.trim() === '') {
+      throw new BadRequestException('client_id is required');
+    }
+
+    const vet_id = sessionData.vet_id;
+    const pet_id = sessionData.pet_id;
+    const client_id = sessionData.client_id;
+
     // Check if session already exists
     const { data: existingSession, error: findError } = await this.supabaseService
       .getClient()
@@ -672,12 +692,12 @@ export class TelehealthService {
 
     if (existingSession) {
       // Update vet_id if it changed
-      if (existingSession.vet_id !== sessionData.vet_id) {
+      if (existingSession.vet_id !== vet_id) {
         const { data: updatedSession, error: updateError } = await this.supabaseService
           .getClient()
           .from('telehealth_sessions')
           .update({
-            vet_id: sessionData.vet_id,
+            vet_id: vet_id,
             status: sessionData.status || 'scheduled',
             updated_at: new Date().toISOString(),
           })
@@ -709,9 +729,9 @@ export class TelehealthService {
       .from('telehealth_sessions')
       .insert({
         appointment_id: appointmentId,
-        client_id: sessionData.client_id,
-        vet_id: sessionData.vet_id,
-        pet_id: sessionData.pet_id,
+        client_id: client_id,
+        vet_id: vet_id,
+        pet_id: pet_id,
         scheduled_time: sessionData.scheduled_time,
         status: sessionData.status || 'scheduled',
         consultation_type: sessionData.consultation_type || 'chat',

@@ -3,6 +3,7 @@ import {
   BadRequestException,
   InternalServerErrorException,
   NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../supabase/supabase.service';
@@ -46,6 +47,15 @@ export class GoogleService {
     }
 
     try {
+      // Use redirect_uri from DTO or fallback to config
+      const redirectUri = exchangeOAuthDto.redirect_uri || this.googleRedirectUri;
+      
+      if (!redirectUri) {
+        throw new BadRequestException(
+          'redirect_uri is required. Please provide it in the request body or set GOOGLE_REDIRECT_URI in environment variables.',
+        );
+      }
+
       // Exchange code for tokens
       const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
@@ -57,7 +67,7 @@ export class GoogleService {
           client_secret: this.googleClientSecret,
           code: exchangeOAuthDto.code,
           grant_type: 'authorization_code',
-          redirect_uri: exchangeOAuthDto.redirect_uri,
+          redirect_uri: redirectUri,
         }),
       });
 
@@ -141,9 +151,9 @@ export class GoogleService {
     google_account_email: string | null;
     google_calendar_id: string;
   }> {
-    // Validate access
-    if (user.role !== 'super_admin' && user.user_id !== vetId) {
-      throw new BadRequestException('Access denied: Cannot access other user\'s connection status');
+    // Validate access - allow super_admin or if vetId matches user's id or user_id
+    if (user.role !== 'super_admin' && user.id !== vetId && user.user_id !== vetId) {
+      throw new ForbiddenException('Access denied: Cannot access other user\'s connection status');
     }
 
     const { data, error } = await this.supabaseService
@@ -168,9 +178,9 @@ export class GoogleService {
    * Disconnect Google Calendar (remove tokens)
    */
   async disconnect(vetId: string, user: UserContext): Promise<void> {
-    // Validate access
-    if (user.role !== 'super_admin' && user.user_id !== vetId) {
-      throw new BadRequestException('Access denied: Cannot disconnect other user\'s Google account');
+    // Validate access - allow super_admin or if vetId matches user's id or user_id
+    if (user.role !== 'super_admin' && user.id !== vetId && user.user_id !== vetId) {
+      throw new ForbiddenException('Access denied: Cannot disconnect other user\'s Google account');
     }
 
     const { error } = await this.supabaseService

@@ -10,23 +10,34 @@ export class VaccinationsService {
   async findAll() {
     const { data, error } = await this.supabaseService
       .getClient()
-      .from('vaccinations')
-      .select('*, pets(*)')
-      .order('date_administered', { ascending: false });
+      .from('preventive_vaccinations')
+      .select('*')
+      .is('deleted_at', null)
+      .order('date_given', { ascending: false, nullsFirst: false });
 
-    if (error) throw error;
-    return data;
+    if (error) {
+      throw new BadRequestException(`Failed to fetch vaccinations: ${error.message}`);
+    }
+
+    return data || [];
   }
 
   async findOne(id: string) {
     const { data, error } = await this.supabaseService
       .getClient()
-      .from('vaccinations')
-      .select('*, pets(*)')
+      .from('preventive_vaccinations')
+      .select('*')
       .eq('id', id)
+      .is('deleted_at', null)
       .single();
 
-    if (error) throw new NotFoundException(`Vaccination with id ${id} not found`);
+    if (error) {
+      if (error.code === 'PGRST116') {
+        throw new NotFoundException(`Vaccination with id ${id} not found`);
+      }
+      throw new BadRequestException(`Failed to fetch vaccination: ${error.message}`);
+    }
+
     return data;
   }
 

@@ -1,4 +1,4 @@
-import { Expose } from 'class-transformer';
+import { Expose, Transform } from 'class-transformer';
 import { IsString, IsOptional, IsEnum, IsUUID, IsDateString } from 'class-validator';
 
 export class CreateTaskDto {
@@ -27,16 +27,19 @@ export class CreateTaskDto {
 
   @Expose()
   @IsUUID()
+  @Transform(({ value }) => (value === '' ? undefined : value))
   assigned_to: string;
 
   @Expose()
   @IsUUID()
   @IsOptional()
+  @Transform(({ value }) => (value === '' ? undefined : value))
   client_id?: string;
 
   @Expose()
   @IsUUID()
   @IsOptional()
+  @Transform(({ value }) => (value === '' ? undefined : value))
   patient_id?: string;
 }
 

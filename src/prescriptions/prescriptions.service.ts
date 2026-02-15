@@ -34,7 +34,7 @@ export class PrescriptionsService {
     const { data: petData, error: petError } = await this.supabaseService
       .getClient()
       .from('pets')
-      .select('species, clinic_id')
+      .select('species, tenant_id')
       .eq('id', petId)
       .single();
 
@@ -47,8 +47,8 @@ export class PrescriptionsService {
     }
 
     // Validate clinic access
-    if (petData.clinic_id && user.clinic_id !== petData.clinic_id && user.role !== 'super_admin') {
-      throw new NotFoundException('Pet not found');
+    if (petData.tenant_id && user.clinic_id !== petData.tenant_id && user.role !== 'super_admin') {
+      throw new ForbiddenException('Access denied: You do not have access to this pet');
     }
 
     // Get species_id from pet_species table
@@ -231,18 +231,23 @@ export class PrescriptionsService {
     return data || [];
   }
 
-  async getMedicationsBySpecies(speciesName: string) {
-    // Get species_id from pet_species table
+  async getMedicationsBySpecies(speciesId: string) {
+    // Validate speciesId is provided
+    if (!speciesId || typeof speciesId !== 'string' || speciesId.trim() === '') {
+      throw new BadRequestException('speciesId is required and cannot be empty');
+    }
+
+    // Validate species exists and is active
     const { data: speciesData, error: speciesError } = await this.supabaseService
       .getClient()
       .from('pet_species')
-      .select('id')
-      .eq('name', speciesName)
+      .select('id, name')
+      .eq('id', speciesId)
       .eq('is_active', true)
       .single();
 
     if (speciesError || !speciesData) {
-      return [];
+      throw new NotFoundException(`Species with id ${speciesId} not found or is not active`);
     }
 
     // Get medications for this species
@@ -250,7 +255,7 @@ export class PrescriptionsService {
       .getClient()
       .from('medications')
       .select('id, name, species_id')
-      .eq('species_id', speciesData.id)
+      .eq('species_id', speciesId)
       .eq('is_active', true)
       .order('display_order', { ascending: true })
       .order('name', { ascending: true });
