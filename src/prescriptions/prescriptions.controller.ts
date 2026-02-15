@@ -29,9 +29,9 @@ export class PrescriptionsController {
     return this.prescriptionsService.findBySoapId(soapId, user);
   }
 
-  @Get('medications/species/:speciesName')
-  getMedicationsBySpecies(@Param('speciesName') speciesName: string) {
-    return this.prescriptionsService.getMedicationsBySpecies(speciesName);
+  @Get('medications/species/:speciesId')
+  getMedicationsBySpecies(@Param('speciesId') speciesId: string) {
+    return this.prescriptionsService.getMedicationsBySpecies(speciesId);
   }
 
   @Post()

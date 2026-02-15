@@ -54,9 +54,7 @@ export class OnboardingService {
     if (!organizationData?.organization_name) {
       throw new BadRequestException('Organization name is required.');
     }
-    if (!organizationData?.plan_id) {
-      throw new BadRequestException('Subscription plan is required.');
-    }
+    // plan_id is optional - not stored in organizations table
     if (!organizationData?.contact_name) {
       throw new BadRequestException('Contact name is required.');
     }
@@ -109,7 +107,7 @@ export class OnboardingService {
 
       const organizationDto: CreateOrganizationDto = {
         name: organizationData.organization_name,
-        plan_id: organizationData.plan_id,
+        // plan_id is not a column in organizations table, so we don't include it
         contact_name: organizationData.contact_name,
         contact_email: organizationData.contact_email,
         phone: organizationData.phone,
@@ -130,7 +128,7 @@ export class OnboardingService {
         organization_id: organization.id,
         address: clinicAdminData.address,
         phone: clinicAdminData.phone,
-        status: 'active',
+        // status is not a column in clinics table, so we don't include it
       };
 
       const clinic = await this.clinicsService.create(clinicDto);

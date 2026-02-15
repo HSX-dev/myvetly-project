@@ -16,6 +16,21 @@ export class RemindersController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   create(@Body(CleanDtoPipe) createReminderDto: CreateReminderDto, @GetUser() user: any) {
+    // Handle field name mapping if task_title is missing but message is present
+    if (!createReminderDto.task_title && (createReminderDto as any).message) {
+      createReminderDto.task_title = (createReminderDto as any).message;
+    }
+    
+    // Handle field name mapping if due_date is missing but reminder_date is present
+    if (!createReminderDto.due_date && (createReminderDto as any).reminder_date) {
+      createReminderDto.due_date = (createReminderDto as any).reminder_date;
+    }
+    
+    // Handle field name mapping if task_type is missing but reminder_type is present
+    if (!createReminderDto.task_type && (createReminderDto as any).reminder_type) {
+      createReminderDto.task_type = (createReminderDto as any).reminder_type as any;
+    }
+    
     return this.remindersService.create(createReminderDto, user);
   }
 }

@@ -2,10 +2,10 @@ import { IsString, IsNotEmpty, IsOptional, IsUUID, IsEnum, IsNumber } from 'clas
 import { Expose } from 'class-transformer';
 
 export class SendMessageDto {
-  @Expose()
-  @IsUUID()
-  @IsNotEmpty()
-  session_id: string;
+  // Note: session_id is NOT validated here - it comes from URL parameter
+  // The controller sets it on the DTO object after validation
+  // We don't use @Expose() so it's excluded from validation
+  session_id?: string;
 
   @Expose()
   @IsString()

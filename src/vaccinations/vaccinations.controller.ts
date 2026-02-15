@@ -33,6 +33,11 @@ export class VaccinationsController {
 
   @Post()
   create(@Body(CleanDtoPipe) createVaccinationDto: CreateVaccinationDto, @GetUser() user: UserContext) {
+    // Handle field name mapping if vaccination_name is missing but vaccine_name is present
+    if (!createVaccinationDto.vaccination_name && (createVaccinationDto as any).vaccine_name) {
+      createVaccinationDto.vaccination_name = (createVaccinationDto as any).vaccine_name;
+    }
+    
     return this.vaccinationsService.create(createVaccinationDto, user);
   }
 }

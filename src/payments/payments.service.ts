@@ -3,6 +3,7 @@ import {
   BadRequestException,
   InternalServerErrorException,
   NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../supabase/supabase.service';
@@ -51,25 +52,56 @@ export class PaymentsService {
     const { data: invoice, error: invoiceError } = await this.supabaseService
       .getClient()
       .from('invoices')
-      .select('id, client_id, total_amount, clinic_id')
+      .select('id, client_id, amount, tenant_id')
       .eq('id', createPaymentLinkDto.invoiceId)
-      .single();
+      .maybeSingle();
 
-    if (invoiceError || !invoice) {
+    if (invoiceError) {
+      console.error('[createPaymentLink] Error fetching invoice:', invoiceError);
+      
+      // Check if table doesn't exist
+      if (invoiceError.message?.includes('relation') && invoiceError.message?.includes('does not exist')) {
+        throw new BadRequestException(
+          'The invoices table does not exist in the database. Please create the table.',
+        );
+      }
+      
+      // Check if invoice not found (PGRST116)
+      if (invoiceError.code === 'PGRST116') {
+        throw new NotFoundException(`Invoice with ID ${createPaymentLinkDto.invoiceId} not found`);
+      }
+      
+      throw new InternalServerErrorException(
+        `Failed to fetch invoice: ${invoiceError.message || 'Unknown error'}`,
+      );
+    }
+
+    if (!invoice) {
       throw new NotFoundException(`Invoice with ID ${createPaymentLinkDto.invoiceId} not found`);
     }
 
-    // Validate clinic access
+    // Validate clinic access (use tenant_id instead of clinic_id)
     if (user.role !== 'super_admin') {
-      if (user.clinic_id !== invoice.clinic_id) {
-        throw new BadRequestException('Access denied: Cannot access invoice from other clinic');
+      if (user.clinic_id !== invoice.tenant_id) {
+        throw new ForbiddenException('Access denied: Cannot access invoice from other clinic');
       }
     }
 
-    // Validate amount matches invoice
-    if (Math.abs(invoice.total_amount - createPaymentLinkDto.amount) > 0.01) {
+    // Use invoice amount if amount not provided, otherwise validate it matches
+    const paymentAmount = createPaymentLinkDto.amount ?? invoice.amount ?? 0;
+    
+    if (createPaymentLinkDto.amount !== undefined) {
+      // If amount is provided, validate it matches invoice amount (allow small rounding differences)
+      if (Math.abs((invoice.amount || 0) - createPaymentLinkDto.amount) > 0.01) {
+        throw new BadRequestException(
+          `Amount ${createPaymentLinkDto.amount} does not match invoice total ${invoice.amount || 0}`,
+        );
+      }
+    }
+    
+    if (paymentAmount <= 0) {
       throw new BadRequestException(
-        `Amount ${createPaymentLinkDto.amount} does not match invoice total ${invoice.total_amount}`,
+        'Payment amount must be greater than 0. Invoice amount is missing or invalid.',
       );
     }
 
@@ -108,14 +140,14 @@ export class PaymentsService {
                   ? `Payment for ${createPaymentLinkDto.clientName}`
                   : 'Invoice payment',
               },
-              unit_amount: Math.round(createPaymentLinkDto.amount * 100), // Convert to cents
+              unit_amount: Math.round(paymentAmount * 100), // Convert to cents
             },
             quantity: 1,
           },
         ],
         metadata: {
           invoice_id: createPaymentLinkDto.invoiceId,
-          clinic_id: invoice.clinic_id,
+          clinic_id: invoice.tenant_id, // Use tenant_id as clinic_id in metadata
         },
         ...(clientEmail && { customer_email: clientEmail }),
       });

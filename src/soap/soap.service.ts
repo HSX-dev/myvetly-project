@@ -700,7 +700,7 @@ export class SoapService {
     const { data: soapNote, error: soapError } = await this.supabaseService
       .getClient()
       .from('soap_notes')
-      .select('id, appointment_id')
+      .select('id, appointment_id, pet_id')
       .eq('id', data.soap_note_id)
       .single();
 
@@ -712,7 +712,7 @@ export class SoapService {
     const { data: appointment, error: appointmentError } = await this.supabaseService
       .getClient()
       .from('appointments')
-      .select('tenant_id')
+      .select('tenant_id, pet_id')
       .eq('id', soapNote.appointment_id)
       .single();
 
@@ -725,11 +725,54 @@ export class SoapService {
       throw new ForbiddenException('Access denied: You do not have access to this SOAP note');
     }
 
-    // Create body map
+    // Get pet species if species not provided or to validate
+    let petSpecies: string | null = null;
+    const petId = soapNote.pet_id || appointment.pet_id;
+    if (petId) {
+      const { data: pet } = await this.supabaseService
+        .getClient()
+        .from('pets')
+        .select('species')
+        .eq('id', petId)
+        .maybeSingle();
+      if (pet?.species) {
+        petSpecies = pet.species.toLowerCase().trim();
+      }
+    }
+
+    // Create body map - remove appointment_id and image_url if present (not valid fields for soap_body_maps table)
+    const { appointment_id, image_url, ...bodyMapData } = data;
+    
+    // Normalize species to lowercase and validate
+    // If species not provided, try to get from pet
+    if (!bodyMapData.species && petSpecies) {
+      bodyMapData.species = petSpecies;
+    }
+    
+    if (bodyMapData.species) {
+      const normalizedSpecies = bodyMapData.species.toLowerCase().trim();
+      // Map common variations to valid database values
+      const speciesMap: Record<string, string> = {
+        'bird': 'bird',
+        'cat': 'cat',
+        'dog': 'dog',
+        'horse': 'horse',
+        'cow': 'cow',
+        'bull': 'bull',
+        'ferret': 'ferret',
+        'fish': 'fish',
+        'goldfish': 'fish',
+        'hamster': 'hamster',
+        'guinea pig': 'guinea_pig',
+        'guinea_pig': 'guinea_pig',
+      };
+      bodyMapData.species = speciesMap[normalizedSpecies] || normalizedSpecies;
+    }
+    
     const { data: bodyMap, error } = await this.supabaseService
       .getClient()
       .from('soap_body_maps')
-      .insert(data)
+      .insert(bodyMapData)
       .select()
       .single();
 
@@ -747,11 +790,34 @@ export class SoapService {
       throw new NotFoundException(`Body map with id ${id} not found`);
     }
 
-    // Update body map
+    // Update body map - remove appointment_id and image_url if present (not valid fields for soap_body_maps table)
+    const { appointment_id, image_url, ...bodyMapData } = data;
+    
+    // Normalize species to lowercase and validate if provided
+    if (bodyMapData.species) {
+      const normalizedSpecies = bodyMapData.species.toLowerCase().trim();
+      // Map common variations to valid database values
+      const speciesMap: Record<string, string> = {
+        'bird': 'bird',
+        'cat': 'cat',
+        'dog': 'dog',
+        'horse': 'horse',
+        'cow': 'cow',
+        'bull': 'bull',
+        'ferret': 'ferret',
+        'fish': 'fish',
+        'goldfish': 'fish',
+        'hamster': 'hamster',
+        'guinea pig': 'guinea_pig',
+        'guinea_pig': 'guinea_pig',
+      };
+      bodyMapData.species = speciesMap[normalizedSpecies] || normalizedSpecies;
+    }
+    
     const { data: updatedBodyMap, error } = await this.supabaseService
       .getClient()
       .from('soap_body_maps')
-      .update(data)
+      .update(bodyMapData)
       .eq('id', id)
       .select()
       .single();
@@ -1066,6 +1132,11 @@ export class SoapService {
     contentType: string,
     user: UserContext,
   ): Promise<{ url: string }> {
+    // Validate appointmentId is provided
+    if (!appointmentId || typeof appointmentId !== 'string' || appointmentId.trim() === '') {
+      throw new BadRequestException('appointmentId is required and cannot be empty');
+    }
+
     // Validate appointment access
     const { data: appointment, error: appointmentError } = await this.supabaseService
       .getClient()
@@ -1679,6 +1750,11 @@ export class SoapService {
    * Create discharge instructions
    */
   async createDischargeInstructions(data: any, user: UserContext): Promise<any> {
+    // Validate appointment_id is provided
+    if (!data.appointment_id || typeof data.appointment_id !== 'string' || data.appointment_id.trim() === '') {
+      throw new BadRequestException('appointment_id is required and cannot be empty');
+    }
+
     // Validate appointment access
     const { data: appointment, error: appointmentError } = await this.supabaseService
       .getClient()
@@ -1688,7 +1764,7 @@ export class SoapService {
       .single();
 
     if (appointmentError || !appointment) {
-      throw new Error(`Appointment with id ${data.appointment_id} not found`);
+      throw new NotFoundException(`Appointment with id ${data.appointment_id} not found`);
     }
 
     // Validate clinic access
@@ -1696,11 +1772,34 @@ export class SoapService {
       throw new ForbiddenException('Access denied: You do not have access to this appointment');
     }
 
+    // Filter out invalid fields that don't exist in the table schema
+    // Valid fields: appointment_id, home_care_instructions, medication_instructions, 
+    // activity_restrictions, diet_recommendations, warning_signs, follow_up_needed,
+    // follow_up_timeframe, follow_up_notes
+    const validFields = [
+      'appointment_id',
+      'home_care_instructions',
+      'medication_instructions',
+      'activity_restrictions',
+      'diet_recommendations',
+      'warning_signs',
+      'follow_up_needed',
+      'follow_up_timeframe',
+      'follow_up_notes'
+    ];
+    
+    const filteredData: any = {};
+    for (const key of validFields) {
+      if (key in data) {
+        filteredData[key] = data[key];
+      }
+    }
+
     // Create discharge instructions
     const { data: instructions, error } = await this.supabaseService
       .getClient()
       .from('discharge_instructions')
-      .insert(data)
+      .insert(filteredData)
       .select(`
         *,
         provided_by_user:users!provided_by(id, full_name)

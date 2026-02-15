@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Patch, Post, Body, UseGuards, Request, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Param, Patch, Post, Body, UseGuards, Request, HttpCode, HttpStatus, BadRequestException } from '@nestjs/common';
 import { TelehealthService } from './telehealth.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { UserContext } from '../auth/auth.guard';
@@ -22,9 +22,20 @@ export class TelehealthController {
     @Body() sendMessageDto: SendMessageDto,
     @Request() req: { user: UserContext }
   ) {
-    // Set session_id from URL parameter
+    // DEBUG: Log what we receive
+    console.log('=== DEBUG: Send Message Endpoint ===');
+    console.log('URL parameter id:', id);
+    console.log('Request body received:', JSON.stringify(sendMessageDto, null, 2));
+    console.log('sendMessageDto.session_id before setting:', sendMessageDto.session_id);
+    
+    // Set session_id from URL parameter (validation allows it to be optional)
+    // This ensures session_id is always set before calling the service
     sendMessageDto.session_id = id;
-    return this.telehealthService.sendMessage(sendMessageDto, req.user);
+    console.log('sendMessageDto.session_id after setting:', sendMessageDto.session_id);
+    console.log('=== End DEBUG ===');
+    
+    // TypeScript assertion: session_id is now guaranteed to be set from URL parameter
+    return this.telehealthService.sendMessage(sendMessageDto as SendMessageDto & { session_id: string }, req.user);
   }
 
   /**
@@ -110,7 +121,28 @@ export class TelehealthController {
     },
     @Request() req: { user: UserContext }
   ) {
-    return this.telehealthService.createOrUpdateSessionForAppointment(appointmentId, sessionData);
+    // Validate required fields (frontend should always provide these from appointment state)
+    if (!sessionData.client_id || sessionData.client_id.trim() === '') {
+      throw new BadRequestException('client_id is required');
+    }
+    if (!sessionData.vet_id || sessionData.vet_id.trim() === '') {
+      throw new BadRequestException('vet_id is required');
+    }
+    if (!sessionData.pet_id || sessionData.pet_id.trim() === '') {
+      throw new BadRequestException('pet_id is required');
+    }
+    
+    // Clean the data - ensure no empty strings
+    const cleanedData = {
+      client_id: sessionData.client_id.trim(),
+      vet_id: sessionData.vet_id.trim(),
+      pet_id: sessionData.pet_id.trim(),
+      scheduled_time: sessionData.scheduled_time,
+      consultation_type: sessionData.consultation_type,
+      status: sessionData.status,
+    };
+    
+    return this.telehealthService.createOrUpdateSessionForAppointment(appointmentId, cleanedData);
   }
 
   /**

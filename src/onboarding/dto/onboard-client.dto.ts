@@ -7,6 +7,7 @@ import {
   IsNotEmpty,
   IsNotEmptyObject,
   IsUUID,
+  IsOptional,
   ValidateNested,
 } from 'class-validator';
 
@@ -16,10 +17,12 @@ export class OrganizationDataDto {
   @IsNotEmpty()
   organization_name: string;
 
+  // plan_id is not stored in organizations table, so it's optional
+  // It can be used for other purposes (e.g., subscription management) but not stored in the organization record
   @Expose()
   @IsUUID()
-  @IsNotEmpty()
-  plan_id: string;
+  @IsOptional()
+  plan_id?: string;
 
   @Expose()
   @IsString()

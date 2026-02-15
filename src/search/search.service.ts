@@ -90,7 +90,7 @@ export class SearchService {
                 .from('users')
                 .select('id, full_name, email')
                 .in('id', userIds)
-            : Promise.resolve({ data: [], error: null }),
+            : Promise.resolve({ data: [] as Array<{ id: string; full_name?: string; email?: string }>, error: null }),
           clientIds.length > 0
             ? this.supabaseService
                 .getClient()
@@ -99,7 +99,7 @@ export class SearchService {
                 .in('client_id', clientIds)
                 .eq('tenant_id', user.clinic_id)
                 .limit(50)
-            : Promise.resolve({ data: [], error: null }),
+            : Promise.resolve({ data: [] as Array<{ id: string; name?: string; client_id?: string; species?: string; breed?: string }>, error: null }),
         ]);
 
         const { data: usersData } = usersResult;
@@ -119,14 +119,14 @@ export class SearchService {
           });
         }
 
-        const usersMap = new Map();
+        const usersMap = new Map<string, any>();
         if (usersData) {
-          usersData.forEach((u) => usersMap.set(u.id, u));
+          usersData.forEach((u: any) => usersMap.set(u.id, u));
         }
 
         // Process each client
         typedClientsData.forEach((client) => {
-          const userData = usersMap.get(client.user_id);
+          const userData = client.user_id ? usersMap.get(client.user_id) : null;
           if (!userData) return;
 
           const clientName =

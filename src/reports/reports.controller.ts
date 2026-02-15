@@ -1,6 +1,8 @@
 import { Controller, Get, Param, Query, UseGuards, Request, ParseIntPipe } from '@nestjs/common';
 import { ReportsService } from './reports.service';
-import { AuthGuard, UserContext } from '../auth/auth.guard';
+import { AuthGuard } from '../auth/auth.guard';
+import type { UserContext } from '../auth/auth.guard';
+import { GetUser } from '../utils/decorators/get-user.decorator';
 import { ReportFiltersDto } from './dto/report-filters.dto';
 
 @Controller('reports')
@@ -11,10 +13,11 @@ export class ReportsController {
   @Get('clinic/:clinicId/stats')
   getClinicStats(
     @Param('clinicId') clinicId: string,
+    @GetUser() user: UserContext,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ) {
-    return this.reportsService.getClinicStats(clinicId, startDate, endDate);
+    return this.reportsService.getClinicStats(clinicId, startDate, endDate, user);
   }
 
   @Get('pet/:petId')
