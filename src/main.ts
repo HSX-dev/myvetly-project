@@ -59,7 +59,7 @@ async function bootstrap() {
   app.useGlobalInterceptors(new ExcludeInterceptor());
 
   // Swagger UI setup using OpenAPI YAML generated from Postman
-  // Setup Swagger BEFORE setting global prefix so it's accessible at /swagger
+  // Setup Swagger BEFORE global prefix so it's accessible at /swagger (not /api/swagger)
   try {
     // Resolve swagger.yaml path - try multiple locations
     const possiblePaths = [
@@ -93,6 +93,7 @@ async function bootstrap() {
   }
 
   // Set global prefix for API routes (after Swagger setup)
+  // This means API routes will be at /api/* but Swagger stays at /swagger
   app.setGlobalPrefix('api');
 
   // Enable detailed error stack traces only in development
