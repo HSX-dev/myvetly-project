@@ -8,6 +8,7 @@ import {
   IsNumber,
   IsBoolean,
   ValidateIf,
+  IsIn,
 } from 'class-validator';
 import { AppointmentStatus } from '../../utils/enums';
 
@@ -80,7 +81,7 @@ export class CreateAppointmentDto {
   estimated_duration?: number;
 
   @Expose()
-  @IsEnum(['low', 'medium', 'high', 'critical'])
+  @IsIn(['low', 'medium', 'high', 'critical'])
   @IsOptional()
   emergency_level?: 'low' | 'medium' | 'high' | 'critical';
 

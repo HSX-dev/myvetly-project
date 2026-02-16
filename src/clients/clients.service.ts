@@ -17,7 +17,8 @@ export class ClientsService {
       .from('clients')
       .select(`
         *,
-        users!clients_user_id_fkey ( first_name, last_name, full_name, email )
+        users!clients_user_id_fkey ( first_name, last_name, full_name, email ),
+        pets!pets_client_id_fkey ( id, name, client_id )
       `);
 
     // Exclude deleted clients
@@ -40,34 +41,23 @@ export class ClientsService {
       return [];
     }
 
-    // Get all client IDs to fetch pets
-    const clientIds = data.map(item => item.id);
-    
-    // Fetch pets for all clients
-    const { data: petsData } = await this.supabaseService
-      .getClient()
-      .from('pets')
-      .select('id, name, client_id')
-      .in('client_id', clientIds);
-
-    // Create a map of client_id to pets
-    const petsByClientId = new Map<string, Array<{ id: string; name: string }>>();
-    if (petsData) {
-      petsData.forEach(pet => {
-        if (pet.client_id) {
-          if (!petsByClientId.has(pet.client_id)) {
-            petsByClientId.set(pet.client_id, []);
-          }
-          petsByClientId.get(pet.client_id)!.push({ id: pet.id, name: pet.name || 'Unnamed Pet' });
-        }
-      });
-    }
-
     // Map the data to match frontend Client type
+    // Pets are now included via JOIN, so we can process them directly
     const clients = data
       .map(item => {
         const user = Array.isArray(item.users) ? item.users[0] : item.users;
-        const pets = petsByClientId.get(item.id) || [];
+        
+        // Handle pets from JOIN - may be array, single object, or null
+        let pets: Array<{ id: string; name: string }> = [];
+        if (item.pets) {
+          const petsArray = Array.isArray(item.pets) ? item.pets : [item.pets];
+          pets = petsArray
+            .filter((pet: any) => pet && pet.id)
+            .map((pet: any) => ({
+              id: pet.id,
+              name: pet.name || 'Unnamed Pet',
+            }));
+        }
 
         // Return all client fields from the database, plus user info and pets
         return {
@@ -97,7 +87,8 @@ export class ClientsService {
       .from('clients')
       .select(`
         *,
-        users!clients_user_id_fkey ( first_name, last_name, full_name, email )
+        users!clients_user_id_fkey ( first_name, last_name, full_name, email ),
+        pets!pets_client_id_fkey ( id, name, client_id )
       `);
 
     // Include deleted clients - don't filter them out
@@ -119,34 +110,23 @@ export class ClientsService {
       return [];
     }
 
-    // Get all client IDs to fetch pets
-    const clientIds = data.map(item => item.id);
-    
-    // Fetch pets for all clients
-    const { data: petsData } = await this.supabaseService
-      .getClient()
-      .from('pets')
-      .select('id, name, client_id')
-      .in('client_id', clientIds);
-
-    // Create a map of client_id to pets
-    const petsByClientId = new Map<string, Array<{ id: string; name: string }>>();
-    if (petsData) {
-      petsData.forEach(pet => {
-        if (pet.client_id) {
-          if (!petsByClientId.has(pet.client_id)) {
-            petsByClientId.set(pet.client_id, []);
-          }
-          petsByClientId.get(pet.client_id)!.push({ id: pet.id, name: pet.name || 'Unnamed Pet' });
-        }
-      });
-    }
-
     // Map the data to match frontend Client type
+    // Pets are now included via JOIN, so we can process them directly
     const clients = data
       .map(item => {
         const user = Array.isArray(item.users) ? item.users[0] : item.users;
-        const pets = petsByClientId.get(item.id) || [];
+        
+        // Handle pets from JOIN - may be array, single object, or null
+        let pets: Array<{ id: string; name: string }> = [];
+        if (item.pets) {
+          const petsArray = Array.isArray(item.pets) ? item.pets : [item.pets];
+          pets = petsArray
+            .filter((pet: any) => pet && pet.id)
+            .map((pet: any) => ({
+              id: pet.id,
+              name: pet.name || 'Unnamed Pet',
+            }));
+        }
 
         // Return all client fields from the database, plus user info and pets
         return {
