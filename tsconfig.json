@@ -16,10 +16,13 @@
     "baseUrl": "./",
     "incremental": true,
     "skipLibCheck": true,
+    "typeRoots": ["./node_modules/@types", "./src/types"],
     "strictNullChecks": true,
     "forceConsistentCasingInFileNames": true,
     "noImplicitAny": false,
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false
-  }
+  },
+  "include": ["src/**/*", "global.d.ts"],
+  "exclude": ["node_modules", "dist", "**/*.spec.ts"]
 }

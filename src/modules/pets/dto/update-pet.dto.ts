@@ -1,5 +1,5 @@
 import { Expose } from 'class-transformer';
-import { IsString, IsOptional, IsDateString, IsArray } from 'class-validator';
+import { IsString, IsOptional, IsDateString, IsUUID, IsNumber } from 'class-validator';
 
 export class UpdatePetDto {
   @Expose()
@@ -13,15 +13,14 @@ export class UpdatePetDto {
   species?: string;
 
   @Expose()
-  @IsArray()
-  @IsString({ each: true })
+  @IsString()
   @IsOptional()
-  breed?: string[];
+  breed?: string;
 
   @Expose()
   @IsDateString()
   @IsOptional()
-  date_of_birth?: string;
+  birth_date?: string;
 
   @Expose()
   @IsString()
@@ -34,8 +33,48 @@ export class UpdatePetDto {
   color?: string;
 
   @Expose()
+  @IsNumber()
+  @IsOptional()
+  weight?: number;
+
+  @Expose()
+  @IsUUID()
+  @IsOptional()
+  client_id?: string;
+
+  @Expose()
   @IsString()
   @IsOptional()
-  weight?: string;
+  status?: string;
+
+  @Expose()
+  @IsString()
+  @IsOptional()
+  reproductive_status?: string;
+
+  @Expose()
+  @IsString()
+  @IsOptional()
+  microchip_id?: string;
+
+  @Expose()
+  @IsString()
+  @IsOptional()
+  rabies_tag?: string;
+
+  @Expose()
+  @IsString()
+  @IsOptional()
+  allergies?: string;
+
+  @Expose()
+  @IsString()
+  @IsOptional()
+  medical_conditions?: string;
+
+  @Expose()
+  @IsString()
+  @IsOptional()
+  behavioral_notes?: string;
 }
 

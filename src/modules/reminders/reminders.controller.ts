@@ -1,170 +1,37 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Patch,
-  Param,
-  Delete,
-  Query,
-  Headers,
-  HttpCode,
-  HttpStatus,
-  BadRequestException,
-} from '@nestjs/common';
-import { RemindersService, UpcomingOccurrence } from './reminders.service';
-import {
-  CreateReminderDto,
-  UpdateReminderDto,
-  MarkCompleteDto,
-  CopyReminderDto,
-} from './dto';
+import { Controller, Get, Post, Param, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import { RemindersService } from './reminders.service';
+import { CreateReminderDto } from './dto/create-reminder.dto';
+import { GetUser } from '../../utils/decorators/get-user.decorator';
 import { CleanDtoPipe } from '../../utils/pipes/clean-dto.pipe';
 
 @Controller('reminders')
 export class RemindersController {
-  constructor(private readonly remindersService: RemindersService) {}
+  constructor(private readonly remindersService: RemindersService) { }
 
-  /**
-   * Create a new reminder
-   * POST /reminders
-   */
+  @Get('pet/:petId')
+  findByPet(@Param('petId') petId: string, @GetUser() user: any) {
+    return this.remindersService.findByPet(petId, user);
+  }
+
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  create(
-    @Body(CleanDtoPipe) createReminderDto: CreateReminderDto,
-    @Headers('x-user-id') userId: string,
-  ) {
-    if (!userId) {
-      throw new BadRequestException('x-user-id header is required');
+  create(@Body(CleanDtoPipe) createReminderDto: CreateReminderDto, @GetUser() user: any) {
+    // Handle field name mapping if task_title is missing but message is present
+    if (!createReminderDto.task_title && (createReminderDto as any).message) {
+      createReminderDto.task_title = (createReminderDto as any).message;
     }
-    return this.remindersService.create(createReminderDto, userId);
-  }
 
-  /**
-   * Get all reminders (admin/debug)
-   * GET /reminders
-   */
-  @Get()
-  findAll() {
-    return this.remindersService.findAll();
-  }
-
-  /**
-   * Get upcoming reminders for the current user
-   * GET /reminders/upcoming?limit=20&filter=today|upcoming|completed
-   */
-  @Get('upcoming')
-  findUpcoming(
-    @Headers('x-user-id') userId: string,
-    @Query('limit') limit?: string,
-    @Query('filter') filter?: 'today' | 'upcoming' | 'completed',
-  ): Promise<UpcomingOccurrence[]> {
-    if (!userId) {
-      throw new BadRequestException('x-user-id header is required');
+    // Handle field name mapping if due_date is missing but reminder_date is present
+    if (!createReminderDto.due_date && (createReminderDto as any).reminder_date) {
+      createReminderDto.due_date = (createReminderDto as any).reminder_date;
     }
-    const limitNum = limit ? parseInt(limit, 10) : 20;
-    return this.remindersService.findUpcoming(userId, limitNum, filter);
-  }
 
-  /**
-   * Get user's pets (for copy picker)
-   * GET /reminders/pets
-   */
-  @Get('pets')
-  getUserPets(@Headers('x-user-id') userId: string) {
-    if (!userId) {
-      throw new BadRequestException('x-user-id header is required');
+    // Handle field name mapping if task_type is missing but reminder_type is present
+    if (!createReminderDto.task_type && (createReminderDto as any).reminder_type) {
+      createReminderDto.task_type = (createReminderDto as any).reminder_type as any;
     }
-    return this.remindersService.getUserPets(userId);
-  }
 
-  /**
-   * Get reminders for a specific pet
-   * GET /reminders/pet/:petId
-   */
-  @Get('pet/:petId')
-  findByPet(
-    @Param('petId') petId: string,
-    @Headers('x-user-id') userId: string,
-  ) {
-    if (!userId) {
-      throw new BadRequestException('x-user-id header is required');
-    }
-    return this.remindersService.findByPet(petId, userId);
-  }
-
-  /**
-   * Get a single reminder by ID
-   * GET /reminders/:id
-   */
-  @Get(':id')
-  findOne(@Param('id') id: string, @Headers('x-user-id') userId: string) {
-    if (!userId) {
-      throw new BadRequestException('x-user-id header is required');
-    }
-    return this.remindersService.findOne(id, userId);
-  }
-
-  /**
-   * Update a reminder
-   * PATCH /reminders/:id
-   */
-  @Patch(':id')
-  update(
-    @Param('id') id: string,
-    @Body(CleanDtoPipe) updateReminderDto: UpdateReminderDto,
-    @Headers('x-user-id') userId: string,
-  ) {
-    if (!userId) {
-      throw new BadRequestException('x-user-id header is required');
-    }
-    return this.remindersService.update(id, updateReminderDto, userId);
-  }
-
-  /**
-   * Delete a reminder
-   * DELETE /reminders/:id
-   */
-  @Delete(':id')
-  remove(@Param('id') id: string, @Headers('x-user-id') userId: string) {
-    if (!userId) {
-      throw new BadRequestException('x-user-id header is required');
-    }
-    return this.remindersService.remove(id, userId);
-  }
-
-  /**
-   * Mark a reminder occurrence as complete or snoozed
-   * POST /reminders/:id/complete
-   */
-  @Post(':id/complete')
-  @HttpCode(HttpStatus.OK)
-  markComplete(
-    @Param('id') id: string,
-    @Body(CleanDtoPipe) markCompleteDto: MarkCompleteDto,
-    @Headers('x-user-id') userId: string,
-  ) {
-    if (!userId) {
-      throw new BadRequestException('x-user-id header is required');
-    }
-    return this.remindersService.markComplete(id, markCompleteDto, userId);
-  }
-
-  /**
-   * Copy a reminder to another pet
-   * POST /reminders/:id/copy
-   */
-  @Post(':id/copy')
-  @HttpCode(HttpStatus.CREATED)
-  copy(
-    @Param('id') id: string,
-    @Body(CleanDtoPipe) copyReminderDto: CopyReminderDto,
-    @Headers('x-user-id') userId: string,
-  ) {
-    if (!userId) {
-      throw new BadRequestException('x-user-id header is required');
-    }
-    return this.remindersService.copy(id, copyReminderDto, userId);
+    return this.remindersService.create(createReminderDto, user);
   }
 }
+

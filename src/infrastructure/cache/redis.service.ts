@@ -8,31 +8,35 @@ export class RedisService implements OnModuleDestroy {
 
   constructor(private configService: ConfigService) {
     const redisUrl = this.configService.get<string>('redis.url');
-    const nodeEnv = this.configService.get<string>('nodeEnv');
-    
-    // Only connect to Redis if URL is provided
     if (redisUrl && redisUrl !== 'redis://localhost:6379') {
       try {
         this.redis = new Redis(redisUrl, {
-          maxRetriesPerRequest: 3,
-          lazyConnect: true,
-          connectTimeout: 5000,
+          retryStrategy: (times) => {
+            // Don't retry if connection fails - just disable Redis
+            return null;
+          },
+          maxRetriesPerRequest: null,
+          enableOfflineQueue: false,
         });
-        
-        this.redis.on('error', (err) => {
-          console.warn('Redis connection error (using in-memory fallback):', err.message);
-          this.redis = null;
+
+        // Handle connection errors gracefully
+        this.redis.on('error', (error: Error & { code?: string }) => {
+          // Only log if it's not a connection refused error (Redis not running)
+          const errorCode = (error as any).code;
+          if (errorCode !== 'ECONNREFUSED' && errorCode !== 'EACCES') {
+            console.warn('⚠️  Redis error:', error.message);
+          }
         });
 
         this.redis.on('connect', () => {
-          console.log('✅ Redis connected successfully');
+          console.log('✅ Redis connection established');
         });
-      } catch (err) {
-        console.warn('Redis initialization failed (using in-memory fallback)');
+      } catch (error) {
+        console.warn('⚠️  Failed to initialize Redis. Caching will be disabled.');
         this.redis = null;
       }
     } else {
-      console.log('📦 Redis not configured - using in-memory fallback (rate limiting disabled)');
+      console.warn('⚠️  Redis URL not configured or using default localhost. Redis features will be disabled.');
     }
   }
 
@@ -94,5 +98,19 @@ export class RedisService implements OnModuleDestroy {
   async getCachedPetContext(petId: string): Promise<object | null> {
     const cached = await this.get(`pet:context:${petId}`);
     return cached ? JSON.parse(cached) : null;
+  }
+
+  // User profile cache helpers
+  async cacheUserProfile(authUserId: string, profile: object, ttlSeconds = 300): Promise<void> {
+    await this.set(`user:profile:${authUserId}`, JSON.stringify(profile), ttlSeconds);
+  }
+
+  async getCachedUserProfile(authUserId: string): Promise<object | null> {
+    const cached = await this.get(`user:profile:${authUserId}`);
+    return cached ? JSON.parse(cached) : null;
+  }
+
+  async invalidateUserProfile(authUserId: string): Promise<void> {
+    await this.del(`user:profile:${authUserId}`);
   }
 }
