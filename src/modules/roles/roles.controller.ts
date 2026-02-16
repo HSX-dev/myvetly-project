@@ -1,0 +1,131 @@
+import { Controller, Get, Param, Post, Body, Patch, Delete, HttpCode, HttpStatus } from '@nestjs/common';
+import { RolesService } from './roles.service';
+import { CreateClinicUserRoleDto } from './dto/create-clinic-user-role.dto';
+import { UpdateClinicUserRoleDto } from './dto/update-clinic-user-role.dto';
+import { CleanDtoPipe } from '../../utils/pipes/clean-dto.pipe';
+import { GetUser } from '../../utils/decorators/get-user.decorator';
+import type { UserContext } from '../auth/auth.guard';
+
+@Controller('roles')
+export class RolesController {
+  constructor(private readonly rolesService: RolesService) { }
+
+  // Admin Roles endpoints
+  @Get('admin-roles')
+  findAllAdminRoles() {
+    return this.rolesService.findAllAdminRoles();
+  }
+
+  @Get('admin-roles/:id')
+  findOneAdminRole(@Param('id') id: string) {
+    return this.rolesService.findOneAdminRole(id);
+  }
+
+  @Post('admin-roles')
+  @HttpCode(HttpStatus.CREATED)
+  createAdminRole(@Body(CleanDtoPipe) createDto: any) {
+    return this.rolesService.createAdminRole(createDto);
+  }
+
+  @Patch('admin-roles/:id')
+  updateAdminRole(
+    @Param('id') id: string,
+    @Body(CleanDtoPipe) updateDto: any
+  ) {
+    return this.rolesService.updateAdminRole(id, updateDto);
+  }
+
+  @Delete('admin-roles/:id')
+  @HttpCode(HttpStatus.OK)
+  deleteAdminRole(@Param('id') id: string) {
+    return this.rolesService.deleteAdminRole(id);
+  }
+
+  // System Roles endpoints
+  @Get()
+  findAll() {
+    return this.rolesService.findAll();
+  }
+
+  // More specific routes must come before parameterized routes
+  @Get('clinic/:clinicId/user-roles')
+  getClinicUserRolesByClinicId(
+    @Param('clinicId') clinicId: string,
+    @GetUser() user: UserContext,
+  ) {
+    return this.rolesService.getClinicUserRolesByClinicId(clinicId, user);
+  }
+
+  @Get('clinic/:clinicId')
+  findByClinic(@Param('clinicId') clinicId: string) {
+    return this.rolesService.findByClinic(clinicId);
+  }
+
+  @Get('user-roles/:id')
+  getClinicUserRole(
+    @Param('id') id: string,
+    @GetUser() user: UserContext,
+  ) {
+    return this.rolesService.getClinicUserRole(id, user);
+  }
+
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.rolesService.findOne(id);
+  }
+
+  @Post('user-roles')
+  @HttpCode(HttpStatus.CREATED)
+  createClinicUserRole(
+    @Body(CleanDtoPipe) createDto: CreateClinicUserRoleDto,
+    @GetUser() user: UserContext,
+  ) {
+    // Fallback for field name mapping if DTO transform didn't catch it
+    if (createDto.role_name && !createDto.name) {
+      createDto.name = createDto.role_name;
+    }
+
+    // Fallback for permissions array if individual access arrays are not provided
+    if (createDto.permissions && Array.isArray(createDto.permissions)) {
+      if (!createDto.admin_controls || createDto.admin_controls.length === 0) {
+        createDto.admin_controls = createDto.permissions;
+      }
+      if (!createDto.view_access || createDto.view_access.length === 0) {
+        createDto.view_access = createDto.permissions;
+      }
+      if (!createDto.create_access || createDto.create_access.length === 0) {
+        createDto.create_access = createDto.permissions;
+      }
+      if (!createDto.edit_access || createDto.edit_access.length === 0) {
+        createDto.edit_access = createDto.permissions;
+      }
+      if (!createDto.cancel_access || createDto.cancel_access.length === 0) {
+        createDto.cancel_access = createDto.permissions;
+      }
+      if (!createDto.delete_access || createDto.delete_access.length === 0) {
+        createDto.delete_access = createDto.permissions;
+      }
+    }
+
+    return this.rolesService.createClinicUserRole(createDto, user);
+  }
+
+  @Patch('user-roles/:id')
+  updateClinicUserRole(
+    @Param('id') id: string,
+    @Body(CleanDtoPipe) updateDto: UpdateClinicUserRoleDto,
+    @GetUser() user: UserContext,
+  ) {
+    return this.rolesService.updateClinicUserRole(id, updateDto, user);
+  }
+
+  @Delete('user-roles/:id')
+  @HttpCode(HttpStatus.OK)
+  deleteClinicUserRole(
+    @Param('id') id: string,
+    @GetUser() user: UserContext,
+  ) {
+    return this.rolesService.deleteClinicUserRole(id, user);
+  }
+}
+
