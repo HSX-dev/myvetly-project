@@ -1,5 +1,5 @@
 import { Expose } from 'class-transformer';
-import { IsString, IsOptional, IsUUID, IsDateString } from 'class-validator';
+import { IsString, IsOptional, IsUUID, IsDateString, IsArray } from 'class-validator';
 
 export class CreatePetDto {
   @Expose()
@@ -16,9 +16,10 @@ export class CreatePetDto {
   species?: string;
 
   @Expose()
-  @IsString()
+  @IsArray()
+  @IsString({ each: true })
   @IsOptional()
-  breed?: string;
+  breed?: string[];
 
   @Expose()
   @IsDateString()

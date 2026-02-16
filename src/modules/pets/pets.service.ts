@@ -22,10 +22,17 @@ export class PetsService {
   }
 
   async create(createPetDto: CreatePetDto) {
+    const payload = {
+      ...createPetDto,
+      breed:
+        createPetDto.breed != null
+          ? JSON.stringify(createPetDto.breed)
+          : undefined,
+    };
     const { data, error } = await this.supabaseService
       .getClient()
       .from('pets')
-      .insert(createPetDto)
+      .insert(payload)
       .select()
       .single();
 
@@ -34,10 +41,14 @@ export class PetsService {
   }
 
   async update(id: string, updatePetDto: UpdatePetDto) {
+    const payload = { ...updatePetDto } as Record<string, unknown>;
+    if (updatePetDto.breed !== undefined) {
+      payload.breed = JSON.stringify(updatePetDto.breed);
+    }
     const { data, error } = await this.supabaseService
       .getClient()
       .from('pets')
-      .update(updatePetDto)
+      .update(payload)
       .eq('id', id)
       .select()
       .single();
