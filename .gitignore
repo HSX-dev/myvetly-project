@@ -38,3 +38,4 @@ coverage/
 
 # Environment backups
 .env.backup
+md/
