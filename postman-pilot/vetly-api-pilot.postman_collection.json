@@ -1,5 +1,6 @@
 {
     "info": {
+        "_postman_id": "vetly-api-collection-001",
         "name": "Vetly API - Complete Collection",
         "description": {
             "content": "Complete Postman collection for ALL endpoints in the Vetly backend API. This collection includes automatic Supabase token authentication via pre-request script.\n\n## Understanding Required vs Optional Fields\n\n**How to identify required fields in request bodies:**\n- Fields marked with **REQUIRED** in the request description must be provided\n- Fields without **REQUIRED** are optional and can be omitted\n- In backend DTOs: Required fields do NOT have `@IsOptional()` decorator\n- In backend DTOs: Optional fields have `@IsOptional()` decorator or TypeScript `?` modifier\n\n**View field requirements:** Click on any request and check the Description tab (right panel in Postman) for detailed field documentation.\n\n## Collection Structure\n\nThis collection is organized into logical folders:\n- **Health Check** - API health verification\n- **Clients** - Client management\n- **Pets** - Pet management\n- **Appointments** - Appointment scheduling and management\n- **Users** - User management\n- **Clinics** - Clinic management\n- **Organizations** - Organization management\n- **Invoices** - Invoice and billing\n- **SOAP Notes** - Medical notes and documentation\n- **Prescriptions** - Prescription management\n- **Files** - File management\n- **Tasks** - Task management\n- **Whiteboard** - Whiteboard patient management\n- **AI** - AI-powered features",
@@ -14077,19 +14078,6 @@
                         },
                         "description": {
                             "content": "Disconnect Google Calendar for a veterinarian (removes refresh token).\n\n## Access Control:\n- **Super Admin**: Can disconnect any user's Google Calendar\n- **Regular Users**: Can only disconnect their own Google Calendar (vetId must match their user_id)\n\n## Automatic Population:\nThe `vetId` parameter is **automatically populated** from the `user_id` environment variable by the pre-request script.\n\n## How to Get Your User ID:\n1. **Automatic**: Run \"Get All Users\" endpoint first - it will automatically set `user_id` in the environment\n2. **Manual**: Set `user_id` in your Postman environment variables to your user UUID (from `users` table, not `auth.users`)\n3. **Override**: You can manually change the `vetId` parameter in the URL if you want to test with a different user (requires super_admin role)\n\n## Warning:\nThis will remove the Google Calendar connection and refresh token. The user will need to reconnect their Google account to use Google Calendar features again.",
-                            "type": "text/markdown"
-                        }
-                    },
-                    "response": []
-                },
-                                        "content": "Veterinarian User UUID",
-                                        "type": "text/markdown"
-                                    }
-                                }
-                            ]
-                        },
-                        "description": {
-                            "content": "Disconnect Google Calendar for a veterinarian.",
                             "type": "text/markdown"
                         }
                     },

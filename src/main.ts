@@ -1,9 +1,15 @@
+
 import { NestFactory, Reflector } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
 import { ExcludeInterceptor } from './utils/interceptors/exclude.interceptor';
 import * as bodyParser from 'body-parser';
+import { SwaggerModule } from '@nestjs/swagger';
+import { OpenAPIObject } from '@nestjs/swagger';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as yaml from 'js-yaml';
 
 async function bootstrap() {
   // Disable NestJS's default body parser so we can configure our own with custom limits
@@ -22,7 +28,7 @@ async function bootstrap() {
   // This is needed for clinic settings and other endpoints that may send larger payloads
   // Access the underlying Express instance that NestJS already has loaded
   const expressInstance = app.getHttpAdapter().getInstance();
-  
+
   // Apply body parser middleware with increased limits using proper import
   // Using import instead of require ensures proper module resolution
   expressInstance.use(bodyParser.json({ limit: '10mb' }));
@@ -41,7 +47,7 @@ async function bootstrap() {
       whitelist: true,
       transform: true,
       transformOptions: {
-        excludeExtraneousValues: true,
+        excludeExtraneousValues: false, // Default: expose all properties unless @Exclude() is used
       },
       // Show detailed error messages in development, generic in production
       disableErrorMessages: isProduction,
@@ -52,7 +58,41 @@ async function bootstrap() {
   // Global interceptor to clean response data
   app.useGlobalInterceptors(new ExcludeInterceptor());
 
-  // Set global prefix for API routes
+  // Swagger UI setup using OpenAPI YAML generated from Postman
+  // Setup Swagger BEFORE setting global prefix so it's accessible at /swagger
+  try {
+    // Resolve swagger.yaml path - try multiple locations
+    const possiblePaths = [
+      path.join(process.cwd(), 'swagger.yaml'), // Root of project
+      path.join(__dirname, '..', 'swagger.yaml'), // Relative to dist/src
+      path.join(__dirname, '../../swagger.yaml'), // Relative to src
+      'swagger.yaml', // Current working directory
+    ];
+    
+    let swaggerPath: string | null = null;
+    for (const possiblePath of possiblePaths) {
+      if (fs.existsSync(possiblePath)) {
+        swaggerPath = possiblePath;
+        break;
+      }
+    }
+    
+    if (!swaggerPath) {
+      throw new Error(`swagger.yaml not found. Tried: ${possiblePaths.join(', ')}`);
+    }
+    
+    const openApiDoc = fs.readFileSync(swaggerPath, 'utf8');
+    const document = yaml.load(openApiDoc) as OpenAPIObject;
+    SwaggerModule.setup('swagger', app, document, {
+      customSiteTitle: 'Vetly API Documentation',
+    });
+    console.log('✅ Swagger UI available at http://localhost:8000/swagger');
+  } catch (e) {
+    console.warn('⚠️  Could not load OpenAPI YAML for Swagger UI:', e.message);
+    console.warn('   Make sure swagger.yaml exists in the project root');
+  }
+
+  // Set global prefix for API routes (after Swagger setup)
   app.setGlobalPrefix('api');
 
   // Enable detailed error stack traces only in development
@@ -61,9 +101,9 @@ async function bootstrap() {
     // This can be handled by a custom exception filter if needed
   }
 
-  const port = configService.get<number>('port') || 3000;
+  const port = configService.get<number>('port') || 8000;
   await app.listen(port);
-  
+
   // Environment-specific startup messages
   if (isDevelopment) {
     console.log(`🚀 Vetly API running on port ${port} [${nodeEnv}]`);

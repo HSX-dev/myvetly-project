@@ -223,7 +223,8 @@ export class ClinicsService {
     // Get user IDs to fetch profiles
     const userIds = (data || []).map(user => user.auth_user_id).filter(Boolean);
     
-    let profilesData: any[] = [];
+    // Create a Map for O(1) profile lookups instead of O(n) find() operations
+    const profilesMap = new Map<string, any>();
     if (userIds.length > 0) {
       const { data: profiles, error: profilesError } = await this.supabaseService
         .getClient()
@@ -233,14 +234,19 @@ export class ClinicsService {
 
       if (profilesError) {
         console.warn('Warning: Error fetching profiles:', profilesError);
-      } else {
-        profilesData = profiles || [];
+      } else if (profiles) {
+        // Build Map for efficient lookups
+        profiles.forEach((profile: any) => {
+          if (profile.id) {
+            profilesMap.set(profile.id, profile);
+          }
+        });
       }
     }
 
     // Map users with profile data and clinic/organization names
     const processedUsers = (data || []).map((user: any) => {
-      const profile = profilesData.find((p: any) => p.id === user.auth_user_id);
+      const profile = user.auth_user_id ? profilesMap.get(user.auth_user_id) : undefined;
       
       // Use full_name from database, or construct from first_name/last_name, or from profiles
       let full_name = user.full_name || '';
