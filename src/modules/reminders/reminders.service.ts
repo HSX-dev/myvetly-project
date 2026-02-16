@@ -137,6 +137,7 @@ export class RemindersService {
       category: createReminderDto.category,
       title: createReminderDto.title,
       repeat: createReminderDto.repeat ?? false,
+      repeat_interval: createReminderDto.repeat_interval ?? null,
       days_of_week: createReminderDto.days_of_week ?? null,
       times_of_day: timesForDb,
       start_date: createReminderDto.start_date,
@@ -271,17 +272,36 @@ export class RemindersService {
 
         const dateStr = checkDate.toISOString().split('T')[0];
         const dayOfWeek = checkDate.getDay(); // 0=Sun, 1=Mon, ...
+        const interval = reminder.repeat_interval;
+        const daysOfWeek = reminder.days_of_week;
 
         // Check if this day should have a reminder
         let shouldRemind = false;
 
         if (reminder.repeat) {
-          // For repeating reminders, check if day is in days_of_week
-          if (
-            reminder.days_of_week &&
-            reminder.days_of_week.includes(dayOfWeek)
-          ) {
+          if (interval === 'daily') {
             shouldRemind = true;
+          } else if (
+            interval === 'weekly' ||
+            (!interval && daysOfWeek && daysOfWeek.length > 0)
+          ) {
+            shouldRemind =
+              !!daysOfWeek && daysOfWeek.includes(dayOfWeek);
+          } else if (!interval && daysOfWeek?.length === 7) {
+            shouldRemind = true;
+          } else if (interval === 'monthly') {
+            const startDay = startDate.getDate();
+            const lastDayOfMonth = new Date(
+              checkDate.getFullYear(),
+              checkDate.getMonth() + 1,
+              0,
+            ).getDate();
+            const dayToMatch = Math.min(startDay, lastDayOfMonth);
+            shouldRemind = checkDate.getDate() === dayToMatch;
+          } else if (interval === 'annually') {
+            shouldRemind =
+              checkDate.getMonth() === startDate.getMonth() &&
+              checkDate.getDate() === startDate.getDate();
           }
         } else {
           // For non-repeating, only on start_date
@@ -480,6 +500,7 @@ export class RemindersService {
       category: source.category,
       title: source.title,
       repeat: source.repeat,
+      repeat_interval: source.repeat_interval ?? null,
       days_of_week: source.days_of_week,
       times_of_day: source.times_of_day,
       start_date: source.start_date,

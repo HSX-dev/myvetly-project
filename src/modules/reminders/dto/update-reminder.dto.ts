@@ -7,11 +7,16 @@ import {
   IsArray,
   IsEnum,
   IsDateString,
+  IsIn,
   ArrayMinSize,
   ValidateIf,
   Matches,
 } from 'class-validator';
-import { ReminderCategory, ReminderStatus } from './create-reminder.dto';
+import {
+  ReminderCategory,
+  ReminderStatus,
+  REPEAT_INTERVALS,
+} from './create-reminder.dto';
 
 export class UpdateReminderDto {
   @Expose()
@@ -35,10 +40,23 @@ export class UpdateReminderDto {
   repeat?: boolean;
 
   @Expose()
+  @IsOptional()
+  @IsIn(REPEAT_INTERVALS, {
+    message: 'repeat_interval must be one of: daily, weekly, monthly, annually',
+  })
+  repeat_interval?: 'daily' | 'weekly' | 'monthly' | 'annually';
+
+  @Expose()
   @IsArray()
   @IsOptional()
-  @ValidateIf((o) => o.repeat === true)
-  @ArrayMinSize(1, { message: 'days_of_week is required when repeat is true' })
+  @ValidateIf(
+    (o) =>
+      o.repeat === true &&
+      (!o.repeat_interval || o.repeat_interval === 'weekly'),
+  )
+  @ArrayMinSize(1, {
+    message: 'days_of_week is required when repeat is true and interval is weekly',
+  })
   days_of_week?: number[];
 
   @Expose()

@@ -7,10 +7,14 @@ import {
   IsArray,
   IsEnum,
   IsDateString,
+  IsIn,
   ArrayMinSize,
   ValidateIf,
   Matches,
 } from 'class-validator';
+
+export const REPEAT_INTERVALS = ['daily', 'weekly', 'monthly', 'annually'] as const;
+export type RepeatInterval = (typeof REPEAT_INTERVALS)[number];
 
 export enum ReminderCategory {
   FEEDING = 'feeding',
@@ -52,10 +56,23 @@ export class CreateReminderDto {
   repeat?: boolean = false;
 
   @Expose()
+  @IsOptional()
+  @IsIn(REPEAT_INTERVALS, {
+    message: 'repeat_interval must be one of: daily, weekly, monthly, annually',
+  })
+  repeat_interval?: RepeatInterval;
+
+  @Expose()
   @IsArray()
   @IsOptional()
-  @ValidateIf((o) => o.repeat === true)
-  @ArrayMinSize(1, { message: 'days_of_week is required when repeat is true' })
+  @ValidateIf(
+    (o) =>
+      o.repeat === true &&
+      (!o.repeat_interval || o.repeat_interval === 'weekly'),
+  )
+  @ArrayMinSize(1, {
+    message: 'days_of_week is required when repeat is true and interval is weekly',
+  })
   days_of_week?: number[]; // 0=Sun, 1=Mon, ..., 6=Sat
 
   @Expose()
