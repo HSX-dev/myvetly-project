@@ -1,10 +1,15 @@
 import { Expose } from 'class-transformer';
-import { IsString, IsOptional, IsUUID, IsDateString, IsArray } from 'class-validator';
+import { IsString, IsOptional, IsUUID, IsDateString, IsNumber } from 'class-validator';
 
 export class CreatePetDto {
   @Expose()
   @IsUUID()
   client_id: string;
+
+  @Expose()
+  @IsUUID()
+  @IsOptional()
+  tenant_id?: string;
 
   @Expose()
   @IsString()
@@ -16,15 +21,14 @@ export class CreatePetDto {
   species?: string;
 
   @Expose()
-  @IsArray()
-  @IsString({ each: true })
+  @IsString()
   @IsOptional()
-  breed?: string[];
+  breed?: string;
 
   @Expose()
   @IsDateString()
   @IsOptional()
-  date_of_birth?: string;
+  birth_date?: string;
 
   @Expose()
   @IsString()
@@ -37,8 +41,43 @@ export class CreatePetDto {
   color?: string;
 
   @Expose()
+  @IsNumber()
+  @IsOptional()
+  weight?: number;
+
+  @Expose()
   @IsString()
   @IsOptional()
-  weight?: string;
+  status?: string;
+
+  @Expose()
+  @IsString()
+  @IsOptional()
+  reproductive_status?: string;
+
+  @Expose()
+  @IsString()
+  @IsOptional()
+  microchip_id?: string;
+
+  @Expose()
+  @IsString()
+  @IsOptional()
+  rabies_tag?: string;
+
+  @Expose()
+  @IsString()
+  @IsOptional()
+  allergies?: string;
+
+  @Expose()
+  @IsString()
+  @IsOptional()
+  medical_conditions?: string;
+
+  @Expose()
+  @IsString()
+  @IsOptional()
+  behavioral_notes?: string;
 }
 

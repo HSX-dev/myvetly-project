@@ -24,5 +24,10 @@ export class CreateClinicDto {
   @IsString()
   @IsOptional()
   email?: string;
+
+  @Expose()
+  @IsString()
+  @IsOptional()
+  status?: string;
 }
 

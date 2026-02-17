@@ -38,3 +38,6 @@ coverage/
 
 # Environment backups
 .env.backup
+
+# md files for development
+md/

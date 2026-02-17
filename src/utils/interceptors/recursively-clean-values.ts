@@ -16,6 +16,10 @@ export function recursivelyStripNullValues(value: unknown): unknown {
 }
 
 export function cleanValue(value: unknown): unknown {
+  // Preserve null at root level to ensure proper JSON serialization
+  if (value === null) {
+    return null;
+  }
   if (Array.isArray(value)) {
     return value.map(cleanValue);
   } else if (value !== null && typeof value === 'object') {
@@ -30,8 +34,6 @@ export function cleanValue(value: unknown): unknown {
       }
     }
     return object;
-  } else if (value == null) {
-    return undefined;
   } else {
     return value;
   }

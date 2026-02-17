@@ -1,110 +1,124 @@
-import { Expose, Type } from 'class-transformer';
-import {
-  IsString,
-  IsOptional,
-  IsUUID,
-  IsBoolean,
-  IsArray,
-  IsEnum,
-  IsDateString,
-  IsIn,
-  ArrayMinSize,
-  ValidateIf,
-  Matches,
-} from 'class-validator';
-
-export const REPEAT_INTERVALS = ['daily', 'weekly', 'monthly', 'annually'] as const;
-export type RepeatInterval = (typeof REPEAT_INTERVALS)[number];
-
-export enum ReminderCategory {
-  FEEDING = 'feeding',
-  POTTY = 'potty',
-  MEDICATION = 'medication',
-  SUPPLEMENTS = 'supplements',
-  PREVENTATIVE = 'preventative',
-  GROOMING = 'grooming',
-  EXERCISE = 'exercise',
-  OTHER = 'other',
-}
-
-export enum ReminderStatus {
-  ACTIVE = 'active',
-  PAUSED = 'paused',
-}
+import { IsString, IsOptional, IsDateString, IsUUID, IsNotEmpty } from 'class-validator';
+import { Transform, Expose } from 'class-transformer';
 
 export class CreateReminderDto {
   @Expose()
   @IsUUID()
+  @Transform(({ value }) => (value === '' ? undefined : value))
   pet_id: string;
 
   @Expose()
+  @IsOptional()
   @IsUUID()
+  @Transform(({ value }) => (value === '' ? undefined : value))
+  clinic_id?: string;
+
+  // Support both message and task_title field names
+  @Expose()
   @IsOptional()
-  client_id?: string; // Can be resolved server-side from x-user-id
-
-  @Expose()
-  @IsEnum(ReminderCategory)
-  category: ReminderCategory;
-
-  @Expose()
   @IsString()
-  title: string;
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  message?: string;
 
   @Expose()
-  @IsBoolean()
-  @IsOptional()
-  repeat?: boolean = false;
-
-  @Expose()
-  @IsOptional()
-  @IsIn(REPEAT_INTERVALS, {
-    message: 'repeat_interval must be one of: daily, weekly, monthly, annually',
+  @IsString({ message: 'task_title must be a string' })
+  @IsNotEmpty({ message: 'task_title is required' })
+  @Transform(({ value, obj }) => {
+    // First, try to use task_title if provided
+    if (value && typeof value === 'string') {
+      const trimmed = value.trim();
+      return trimmed === '' ? undefined : trimmed;
+    }
+    // Fallback to message if task_title is not present
+    if (obj && obj.message && typeof obj.message === 'string') {
+      const trimmed = obj.message.trim();
+      return trimmed === '' ? undefined : trimmed;
+    }
+    return value;
   })
-  repeat_interval?: RepeatInterval;
+  task_title: string;
 
+  // Support both reminder_type and task_type field names
   @Expose()
-  @IsArray()
   @IsOptional()
-  @ValidateIf(
-    (o) =>
-      o.repeat === true &&
-      (!o.repeat_interval || o.repeat_interval === 'weekly'),
-  )
-  @ArrayMinSize(1, {
-    message: 'days_of_week is required when repeat is true and interval is weekly',
-  })
-  days_of_week?: number[]; // 0=Sun, 1=Mon, ..., 6=Sat
+  @IsString()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  reminder_type?: string;
 
   @Expose()
-  @IsArray()
-  @ArrayMinSize(1, { message: 'At least one time is required' })
-  @Matches(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/, {
-    each: true,
-    message: 'Each time must be in HH:mm format',
+  @IsOptional()
+  @IsString()
+  @Transform(({ value, obj }) => {
+    // First, try to use task_type if provided
+    if (value && typeof value === 'string') {
+      const trimmed = value.trim();
+      return trimmed === '' ? undefined : trimmed;
+    }
+    // Fallback to reminder_type if task_type is not present
+    if (obj && obj.reminder_type && typeof obj.reminder_type === 'string') {
+      const trimmed = obj.reminder_type.trim();
+      return trimmed === '' ? undefined : trimmed;
+    }
+    return value;
   })
-  times_of_day: string[]; // Array of "HH:mm" strings
+  task_type?: 'vaccination' | 'medication' | 'checkup' | 'dental' | 'grooming' | 'other';
 
+  // Support both reminder_date and due_date field names
   @Expose()
+  @IsOptional()
   @IsDateString()
-  start_date: string; // ISO date string
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  reminder_date?: string;
 
   @Expose()
-  @IsDateString()
+  @IsDateString({}, { message: 'due_date must be a valid ISO 8601 date string' })
+  @Transform(({ value, obj }) => {
+    // First, try to use due_date if provided
+    if (value && typeof value === 'string') {
+      const trimmed = value.trim();
+      return trimmed === '' ? undefined : trimmed;
+    }
+    // Fallback to reminder_date if due_date is not present
+    if (obj && obj.reminder_date && typeof obj.reminder_date === 'string') {
+      const trimmed = obj.reminder_date.trim();
+      return trimmed === '' ? undefined : trimmed;
+    }
+    return value;
+  })
+  due_date: string;
+
+  @Expose()
   @IsOptional()
-  end_date?: string; // ISO date string
-
-  @Expose()
   @IsString()
-  @IsOptional()
-  notes?: string;
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  description?: string;
 
   @Expose()
-  @IsString()
   @IsOptional()
-  photo_url?: string;
-
-  @Expose()
-  @IsEnum(ReminderStatus)
-  @IsOptional()
-  status?: ReminderStatus = ReminderStatus.ACTIVE;
+  @IsUUID()
+  @Transform(({ value }) => (value === '' ? undefined : value))
+  assigned_to?: string;
 }
+
+// Enums and constants for reminders
+export enum ReminderCategory {
+  VACCINATION = 'vaccination',
+  MEDICATION = 'medication',
+  CHECKUP = 'checkup',
+  DENTAL = 'dental',
+  GROOMING = 'grooming',
+  OTHER = 'other',
+}
+
+export enum ReminderStatus {
+  PENDING = 'pending',
+  COMPLETED = 'completed',
+  OVERDUE = 'overdue',
+  CANCELLED = 'cancelled',
+}
+
+export const REPEAT_INTERVALS = ['daily', 'weekly', 'monthly', 'annually'] as const;
+
+
+
+

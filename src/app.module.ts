@@ -1,17 +1,15 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import configuration from './config/configuration';
-
-// Infrastructure
-import { SupabaseModule } from './infrastructure/supabase/supabase.module';
-import { CacheModule } from './infrastructure/cache/cache.module';
-
-// Feature Modules
 import { AiModule } from './modules/ai/ai.module';
+import { SupabaseModule } from './modules/supabase/supabase.module';
+import { DatabaseModule } from './modules/database/database.module';
+import { CacheModule } from './modules/cache/cache.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { AuthGuard } from './modules/auth/auth.guard';
 import { UsersModule } from './modules/users/users.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { ClinicsModule } from './modules/clinics/clinics.module';
@@ -31,13 +29,25 @@ import { ReportsModule } from './modules/reports/reports.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { SoapModule } from './modules/soap/soap.module';
+import { WhiteboardModule } from './modules/whiteboard/whiteboard.module';
+import { OnboardingModule } from './modules/onboarding/onboarding.module';
+import { ZoomModule } from './modules/zoom/zoom.module';
+import { PaymentsModule } from './modules/payments/payments.module';
+import { GoogleModule } from './modules/google/google.module';
+import { SearchModule } from './modules/search/search.module';
+import configuration from './config/configuration';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      // In development, prefer .env.local (fallback to .env); in production, use .env
+      envFilePath:
+        process.env.NODE_ENV === 'production'
+          ? '.env'
+          : ['.env.local', '.env'], // Try .env.local first, then .env
       load: [configuration],
-      envFilePath: ['.env.local', '.env.development', '.env'],
     }),
     ThrottlerModule.forRoot([
       {
@@ -46,6 +56,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
       },
     ]),
     SupabaseModule,
+    DatabaseModule,
     CacheModule,
     AuthModule,
     AiModule,
@@ -68,8 +79,22 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     RolesModule,
     SettingsModule,
     DashboardModule,
+    SoapModule,
+    WhiteboardModule,
+    OnboardingModule,
+    ZoomModule,
+    PaymentsModule,
+    GoogleModule,
+    SearchModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    // Global authentication guard - protects all endpoints
+    {
+      provide: APP_GUARD,
+      useClass: AuthGuard,
+    },
+  ],
 })
-export class AppModule {}
+export class AppModule { }

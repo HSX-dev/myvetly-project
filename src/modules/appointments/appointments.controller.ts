@@ -11,22 +11,32 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { AppointmentsService } from './appointments.service';
-import { CreateAppointmentDto, UpdateAppointmentDto } from './dto';
+import { CreateAppointmentDto, UpdateAppointmentDto, SendConfirmationEmailDto } from './dto';
 import { CleanDtoPipe } from '../../utils/pipes/clean-dto.pipe';
+import { GetUser } from '../../utils/decorators/get-user.decorator';
 
 @Controller('appointments')
 export class AppointmentsController {
-  constructor(private readonly appointmentsService: AppointmentsService) {}
+  constructor(private readonly appointmentsService: AppointmentsService) { }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  create(@Body(CleanDtoPipe) createAppointmentDto: CreateAppointmentDto) {
-    return this.appointmentsService.create(createAppointmentDto);
+  create(@Body(CleanDtoPipe) createAppointmentDto: CreateAppointmentDto, @GetUser() user: any) {
+    return this.appointmentsService.create(createAppointmentDto, user);
   }
 
   @Get()
   findAll() {
     return this.appointmentsService.findAll();
+  }
+
+  // More specific route must come BEFORE less specific route
+  @Get('clinic/:clinicId/status/:status')
+  findByStatus(
+    @Param('clinicId') clinicId: string,
+    @Param('status') status: 'requested' | 'scheduled' | 'checked_in' | 'in_progress' | 'completed' | 'cancelled' | 'no_show',
+  ) {
+    return this.appointmentsService.findByStatus(clinicId, status);
   }
 
   @Get('clinic/:clinicId')
@@ -39,8 +49,34 @@ export class AppointmentsController {
   }
 
   @Get('pet/:petId')
-  findByPet(@Param('petId') petId: string) {
-    return this.appointmentsService.findByPet(petId);
+  findByPet(@Param('petId') petId: string, @GetUser() user: any) {
+    return this.appointmentsService.findByPet(petId, user);
+  }
+
+  @Get('client/:clientId/service-type/:serviceType')
+  findByClientAndServiceType(
+    @Param('clientId') clientId: string,
+    @Param('serviceType') serviceType: string,
+    @GetUser() user: any,
+    @Query('includePast') includePast?: string,
+  ) {
+    const includePastBool = includePast === 'true';
+    return this.appointmentsService.findByClientAndServiceType(clientId, serviceType, includePastBool, user);
+  }
+
+  @Get('clinic/:clinicId/available-veterinarians')
+  getAvailableVeterinarians(@Param('clinicId') clinicId: string, @GetUser() user: any) {
+    return this.appointmentsService.getAvailableVeterinarians(clinicId, user);
+  }
+
+  @Patch('clinic/:clinicId/update-overdue')
+  updateOverdueAppointments(@Param('clinicId') clinicId: string, @GetUser() user: any) {
+    return this.appointmentsService.updateOverdueAppointments(clinicId, user);
+  }
+
+  @Get('clinic/:clinicId/needing-attention')
+  getAppointmentsNeedingAttention(@Param('clinicId') clinicId: string, @GetUser() user: any) {
+    return this.appointmentsService.getAppointmentsNeedingAttention(clinicId, user);
   }
 
   @Get(':id')
@@ -52,13 +88,30 @@ export class AppointmentsController {
   update(
     @Param('id') id: string,
     @Body(CleanDtoPipe) updateAppointmentDto: UpdateAppointmentDto,
+    @GetUser() user: any,
   ) {
-    return this.appointmentsService.update(id, updateAppointmentDto);
+    return this.appointmentsService.update(id, updateAppointmentDto, user);
+  }
+
+  @Patch(':id/status')
+  updateStatus(
+    @Param('id') id: string,
+    @GetUser() user: any,
+    @Body('status') status: 'requested' | 'scheduled' | 'checked_in' | 'in_progress' | 'completed' | 'cancelled' | 'no_show',
+    @Body('vetId') vetId?: string,
+    @Body('notes') notes?: string,
+  ) {
+    return this.appointmentsService.updateStatus(id, status, user, vetId, notes);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.appointmentsService.remove(id);
+  remove(@Param('id') id: string, @GetUser() user: any) {
+    return this.appointmentsService.remove(id, user);
+  }
+
+  @Post('send-confirmation-email')
+  sendConfirmationEmail(@Body(CleanDtoPipe) sendConfirmationDto: SendConfirmationEmailDto) {
+    return this.appointmentsService.sendConfirmationEmail(sendConfirmationDto);
   }
 }
 
