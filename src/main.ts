@@ -20,7 +20,7 @@ async function bootstrap() {
   const reflector = app.get(Reflector);
 
   const nodeEnv = configService.get<string>('nodeEnv');
-  const corsOrigins = configService.get<string[]>('cors.origins');
+  const corsOrigins = configService.get<string[]>('cors.origins') || [];
   const isDevelopment = nodeEnv === 'development';
   const isProduction = nodeEnv === 'production';
 
@@ -35,11 +35,19 @@ async function bootstrap() {
   expressInstance.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 
   // Enable CORS - more permissive in development
-  app.enableCors({
-    origin: isDevelopment ? true : corsOrigins, // Allow all origins in dev
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+  const corsOptions = {
+    origin: isDevelopment ? true : (corsOrigins.length > 0 ? corsOrigins : true), // Allow all origins in dev, or if no origins configured
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     credentials: true,
-  });
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  };
+  
+  app.enableCors(corsOptions);
+  
+  // Log CORS configuration
+  if (isProduction) {
+    console.log(`🌐 CORS enabled for origins: ${corsOrigins.length > 0 ? corsOrigins.join(', ') : 'ALL (no CORS_ORIGINS set)'}`);
+  }
 
   // Enable validation with environment-specific settings
   app.useGlobalPipes(
@@ -68,7 +76,7 @@ async function bootstrap() {
       path.join(__dirname, '../../swagger.yaml'), // Relative to src
       'swagger.yaml', // Current working directory
     ];
-    
+
     let swaggerPath: string | null = null;
     for (const possiblePath of possiblePaths) {
       if (fs.existsSync(possiblePath)) {
@@ -76,11 +84,11 @@ async function bootstrap() {
         break;
       }
     }
-    
+
     if (!swaggerPath) {
       throw new Error(`swagger.yaml not found. Tried: ${possiblePaths.join(', ')}`);
     }
-    
+
     const openApiDoc = fs.readFileSync(swaggerPath, 'utf8');
     const document = yaml.load(openApiDoc) as OpenAPIObject;
     SwaggerModule.setup('swagger', app, document, {
