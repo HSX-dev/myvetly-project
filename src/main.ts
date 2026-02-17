@@ -21,7 +21,7 @@ async function bootstrap() {
   const reflector = app.get(Reflector);
 
   const nodeEnv = configService.get<string>('nodeEnv');
-  const corsOrigins = configService.get<string[]>('cors.origins');
+  const corsOrigins = configService.get<string[]>('cors.origins') || [];
   const isDevelopment = nodeEnv === 'development';
   const isProduction = nodeEnv === 'production';
 
@@ -35,10 +35,10 @@ async function bootstrap() {
   expressInstance.use(bodyParser.json({ limit: '10mb' }));
   expressInstance.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 
-  // Enable CORS - more permissive in development
+  // Enable CORS
   app.enableCors({
-    origin: isDevelopment ? true : corsOrigins, // Allow all origins in dev
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+    origin: isDevelopment ? true : (corsOrigins.length > 0 ? corsOrigins : true),
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     credentials: true,
   });
 
@@ -63,7 +63,7 @@ async function bootstrap() {
   app.useGlobalFilters(new GlobalExceptionFilter());
 
   // Swagger UI setup using OpenAPI YAML generated from Postman
-  // Setup Swagger BEFORE setting global prefix so it's accessible at /swagger
+  // Setup Swagger BEFORE global prefix so it's accessible at /swagger (not /api/swagger)
   try {
     // Resolve swagger.yaml path - try multiple locations
     const possiblePaths = [
@@ -72,7 +72,7 @@ async function bootstrap() {
       path.join(__dirname, '../../swagger.yaml'), // Relative to src
       'swagger.yaml', // Current working directory
     ];
-    
+
     let swaggerPath: string | null = null;
     for (const possiblePath of possiblePaths) {
       if (fs.existsSync(possiblePath)) {
@@ -80,11 +80,11 @@ async function bootstrap() {
         break;
       }
     }
-    
+
     if (!swaggerPath) {
       throw new Error(`swagger.yaml not found. Tried: ${possiblePaths.join(', ')}`);
     }
-    
+
     const openApiDoc = fs.readFileSync(swaggerPath, 'utf8');
     const document = yaml.load(openApiDoc) as OpenAPIObject;
     SwaggerModule.setup('swagger', app, document, {
@@ -97,6 +97,7 @@ async function bootstrap() {
   }
 
   // Set global prefix for API routes (after Swagger setup)
+  // This means API routes will be at /api/* but Swagger stays at /swagger
   app.setGlobalPrefix('api');
 
   // Enable detailed error stack traces only in development
