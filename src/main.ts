@@ -36,9 +36,16 @@ async function bootstrap() {
   expressInstance.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 
   // Enable CORS
+  // Security: In production, only allow specific origins. Never allow all origins in production.
+  if (isProduction && corsOrigins.length === 0) {
+    console.warn('⚠️  SECURITY WARNING: No CORS origins configured in production!');
+    console.warn('   Set CORS_ORIGINS environment variable or update configuration.ts defaults');
+  }
+
   app.enableCors({
-    origin: isDevelopment ? true : (corsOrigins.length > 0 ? corsOrigins : true),
+    origin: isDevelopment ? true : corsOrigins.length > 0 ? corsOrigins : false, // Never allow all origins in production
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
     credentials: true,
   });
 
