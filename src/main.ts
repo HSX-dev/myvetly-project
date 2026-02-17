@@ -34,20 +34,12 @@ async function bootstrap() {
   expressInstance.use(bodyParser.json({ limit: '10mb' }));
   expressInstance.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 
-  // Enable CORS - more permissive in development
-  const corsOptions = {
-    origin: isDevelopment ? true : (corsOrigins.length > 0 ? corsOrigins : true), // Allow all origins in dev, or if no origins configured
+  // Enable CORS
+  app.enableCors({
+    origin: isDevelopment ? true : (corsOrigins.length > 0 ? corsOrigins : true),
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  };
-  
-  app.enableCors(corsOptions);
-  
-  // Log CORS configuration
-  if (isProduction) {
-    console.log(`🌐 CORS enabled for origins: ${corsOrigins.length > 0 ? corsOrigins.join(', ') : 'ALL (no CORS_ORIGINS set)'}`);
-  }
+  });
 
   // Enable validation with environment-specific settings
   app.useGlobalPipes(

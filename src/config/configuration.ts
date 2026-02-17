@@ -36,9 +36,9 @@ export default () => ({
     origins: process.env.CORS_ORIGINS?.split(',') || [
       'http://localhost:3000',
       'http://localhost:5173',
-      // Add your Vercel frontend URL here (and any other production URLs)
-      // 'https://your-frontend.vercel.app',
-      'https://myvetly-web-9zib-git-integration-vetly.vercel.app'
+      // Vercel frontend URLs - the CORS validator will automatically match preview deployments
+      // Add your production domain here if you have one (e.g., 'https://myvetly.com')
+      'https://myvetly-web-9zib-git-integration-vetly.vercel.app', // This will match all preview deployments starting with "myvetly-web"
     ],
   },
 
