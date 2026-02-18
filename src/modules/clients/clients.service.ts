@@ -6,7 +6,7 @@ import { UserContext } from '../auth/auth.guard';
 
 @Injectable()
 export class ClientsService {
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(private supabaseService: SupabaseService) { }
 
   async findAll(user: UserContext) {
     const organizationId = user.organization_id;
@@ -46,7 +46,7 @@ export class ClientsService {
     const clients = data
       .map(item => {
         const user = Array.isArray(item.users) ? item.users[0] : item.users;
-        
+
         // Handle pets from JOIN - may be array, single object, or null
         let pets: Array<{ id: string; name: string }> = [];
         if (item.pets) {
@@ -115,7 +115,7 @@ export class ClientsService {
     const clients = data
       .map(item => {
         const user = Array.isArray(item.users) ? item.users[0] : item.users;
-        
+
         // Handle pets from JOIN - may be array, single object, or null
         let pets: Array<{ id: string; name: string }> = [];
         if (item.pets) {
@@ -600,8 +600,8 @@ export class ClientsService {
         }
       } else {
         // Clinic admin and below can only restore clients in their clinic
-        if (client.organization_id !== user.organization_id || 
-            client.clinic_id !== user.clinic_id) {
+        if (client.organization_id !== user.organization_id ||
+          client.clinic_id !== user.clinic_id) {
           throw new ForbiddenException('Access denied: Cannot restore clients outside your clinic');
         }
       }
@@ -611,7 +611,7 @@ export class ClientsService {
     const { data, error } = await this.supabaseService
       .getClient()
       .from('clients')
-      .update({ 
+      .update({
         status: 'active',
         deleted_at: null,
         deleted_by: null,
@@ -647,8 +647,8 @@ export class ClientsService {
         }
       } else {
         // Clinic admin and below can only delete clients in their clinic
-        if (client.organization_id !== user.organization_id || 
-            client.clinic_id !== user.clinic_id) {
+        if (client.organization_id !== user.organization_id ||
+          client.clinic_id !== user.clinic_id) {
           throw new ForbiddenException('Access denied: Cannot permanently delete clients outside your clinic');
         }
       }
@@ -663,7 +663,7 @@ export class ClientsService {
 
     if (error) {
       console.error('Error permanently deleting client:', error);
-      
+
       // Check for foreign key constraint violations
       if (error.code === '23503') {
         // Extract which table is causing the constraint violation
@@ -677,12 +677,12 @@ export class ClientsService {
         } else if (error.message?.includes('client_notes')) {
           relatedEntity = 'client notes';
         }
-        
+
         throw new ConflictException(
           `Cannot permanently delete client: This client has ${relatedEntity} associated with it. Please delete or reassign the ${relatedEntity} first, or use soft delete instead.`
         );
       }
-      
+
       throw new InternalServerErrorException(
         `Failed to permanently delete client: ${error.message || 'Unknown error'}`,
       );

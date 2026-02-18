@@ -636,7 +636,7 @@ export class TelehealthService {
     const { data, error } = await this.supabaseService
       .getClient()
       .from('telehealth_sessions')
-      .select('id, vet_id')
+      .select('*')
       .eq('appointment_id', appointmentId)
       .maybeSingle();
 

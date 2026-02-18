@@ -427,5 +427,78 @@ export class ClinicsService {
     // Return the enabled service names
     return enabledServices.map((s: any) => s.service_name);
   }
+
+  /**
+   * Get reference services (from clinic_services_reference table)
+   * This method replicates the logic from servicesService.getServices()
+   * 
+   * @param clinicId - Optional clinic ID to filter enabled services
+   * @param organizationId - Optional organization ID (not used but kept for compatibility)
+   * @param user - User context for access control
+   * @returns Array of clinic service reference data
+   */
+  async getReferenceServices(clinicId?: string, organizationId?: string, user?: UserContext) {
+    if (!clinicId) {
+      // If no clinic specified, return all reference services
+      const { data, error } = await this.supabaseService
+        .getClient()
+        .from('clinic_services_reference')
+        .select('*')
+        .order('display_order');
+
+      if (error) {
+        console.error('Error fetching services:', error);
+        throw new InternalServerErrorException(`Failed to fetch services: ${error.message}`);
+      }
+
+      return data || [];
+    }
+
+    // Get services that are enabled for this clinic
+    const { data: enabledServices, error: enabledError } = await this.supabaseService
+      .getClient()
+      .from('clinic_services_offered')
+      .select('service_name')
+      .eq('clinic_id', clinicId)
+      .eq('is_enabled', true);
+
+    if (enabledError) {
+      console.error('Error fetching enabled services:', enabledError);
+      throw new InternalServerErrorException(`Failed to fetch enabled services: ${enabledError.message}`);
+    }
+
+    if (!enabledServices || enabledServices.length === 0) {
+      // If no services enabled for this clinic, return all services as fallback
+      console.warn('No services enabled in clinic_services_offered, returning all services');
+      const { data, error } = await this.supabaseService
+        .getClient()
+        .from('clinic_services_reference')
+        .select('*')
+        .order('display_order');
+
+      if (error) {
+        console.error('Error fetching services:', error);
+        throw new InternalServerErrorException(`Failed to fetch services: ${error.message}`);
+      }
+
+      return data || [];
+    }
+
+    // Get the full service details from reference table for enabled services
+    const enabledServiceNames = enabledServices.map((s: any) => s.service_name);
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('clinic_services_reference')
+      .select('*')
+      .in('service_name', enabledServiceNames)
+      .order('display_order');
+
+    if (error) {
+      console.error('Error fetching services:', error);
+      throw new InternalServerErrorException(`Failed to fetch services: ${error.message}`);
+    }
+
+    return data || [];
+  }
 }
 

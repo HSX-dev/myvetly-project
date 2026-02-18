@@ -31,6 +31,15 @@ export class ClinicsController {
   }
 
   // More specific routes must come before parameterized routes
+  @Get('services/reference')
+  getReferenceServices(
+    @GetUser() user: any,
+    @Query('clinic_id') clinicId?: string,
+    @Query('organization_id') organizationId?: string,
+  ) {
+    return this.clinicsService.getReferenceServices(clinicId, organizationId, user);
+  }
+
   @Get(':id/branding')
   getBranding(@Param('id') id: string, @GetUser() user: any) {
     console.log('getBranding called with id:', id, 'user:', user?.id);
