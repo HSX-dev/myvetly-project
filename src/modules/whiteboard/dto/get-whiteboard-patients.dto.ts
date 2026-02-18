@@ -3,6 +3,10 @@ import { IsOptional, IsString, IsEnum, IsBoolean } from 'class-validator';
 export class GetWhiteboardPatientsDto {
   @IsOptional()
   @IsString()
+  date?: string;
+
+  @IsOptional()
+  @IsString()
   assigned_vet_id?: string;
 
   @IsOptional()
