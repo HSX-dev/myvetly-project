@@ -318,7 +318,7 @@ export class DashboardService {
         pet: patient?.name || 'No Patient',
         dueDate: task.due_date,
         priority: task.priority as 'high' | 'medium' | 'low',
-        status: task.status as 'pending' | 'in_progress' | 'completed',
+        status: task.status as 'open' | 'in_progress' | 'closed',
         assignedTo: assignedUser
           ? {
               id: assignedUser.id,
