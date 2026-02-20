@@ -12,9 +12,9 @@ export class CreateTaskDto {
   description?: string;
 
   @Expose()
-  @IsEnum(['pending', 'in_progress', 'completed'])
+  @IsEnum(['open', 'in_progress', 'closed'])
   @IsOptional()
-  status?: 'pending' | 'in_progress' | 'completed';
+  status?: 'open' | 'in_progress' | 'closed';
 
   @Expose()
   @IsEnum(['low', 'medium', 'high'])

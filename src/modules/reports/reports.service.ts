@@ -1248,9 +1248,9 @@ export class ReportsService {
       query = query.eq('organization_id', finalOrganizationId);
     }
     if (openCompleted === 'open') {
-      query = query.in('status', ['pending', 'in_progress']);
-    } else if (openCompleted === 'completed') {
-      query = query.eq('status', 'completed');
+      query = query.in('status', ['open', 'in_progress']);
+    } else if (openCompleted === 'closed') {
+      query = query.eq('status', 'closed');
     }
     if (userId) {
       query = query.eq('assigned_to', userId);
@@ -1274,9 +1274,9 @@ export class ReportsService {
       countQuery = countQuery.eq('organization_id', finalOrganizationId);
     }
     if (openCompleted === 'open') {
-      countQuery = countQuery.in('status', ['pending', 'in_progress']);
-    } else if (openCompleted === 'completed') {
-      countQuery = countQuery.eq('status', 'completed');
+      countQuery = countQuery.in('status', ['open', 'in_progress']);
+    } else if (openCompleted === 'closed') {
+      countQuery = countQuery.eq('status', 'closed');
     }
     if (userId) {
       countQuery = countQuery.eq('assigned_to', userId);
@@ -1310,7 +1310,7 @@ export class ReportsService {
     if (overdue === 'yes') {
       const now = moment().format('YYYY-MM-DD');
       filtered = filtered.filter(
-        (task: any) => task.status !== 'completed' && task.due_date < now,
+        (task: any) => task.status !== 'closed' && task.due_date < now,
       );
     }
 
@@ -1323,7 +1323,7 @@ export class ReportsService {
         type: task.description ? 'other' : null,
         related_appointment_session: null,
         assigned_user: user?.full_name || null,
-        status: task.status as 'pending' | 'in_progress' | 'completed',
+        status: task.status as 'open' | 'in_progress' | 'closed',
         due_date: task.due_date,
       };
     });

@@ -135,7 +135,7 @@ export class TasksService {
         pet: patient?.name || 'No Patient',
         dueDate: task.due_date,
         priority: task.priority as 'high' | 'medium' | 'low',
-        status: task.status as 'pending' | 'in_progress' | 'completed',
+        status: task.status as 'open' | 'in_progress' | 'closed',
         assignedTo: assignedUser
           ? {
               id: assignedUser.id,
@@ -402,7 +402,131 @@ export class TasksService {
         pet: patient?.name || 'No Patient',
         dueDate: task.due_date,
         priority: task.priority as 'high' | 'medium' | 'low',
-        status: task.status as 'pending' | 'in_progress' | 'completed',
+        status: task.status as 'open' | 'in_progress' | 'closed',
+        assignedTo: assignedUser
+          ? {
+              id: assignedUser.id,
+              full_name: assignedUser.full_name || 'Unknown User',
+              initials: getInitials(assignedUser.full_name || 'Unknown User'),
+            }
+          : undefined,
+      };
+    });
+  }
+
+  /**
+   * Get tasks for a specific client
+   */
+  async findByClient(clientId: string, user: UserContext) {
+    // Validate user has access to this client's clinic
+    const { data: client, error: clientError } = await this.supabaseService
+      .getClient()
+      .from('clients')
+      .select('clinic_id')
+      .eq('id', clientId)
+      .single();
+
+    if (clientError || !client) {
+      throw new NotFoundException(`Client with id ${clientId} not found`);
+    }
+
+    // Validate clinic access
+    if (user.role !== 'super_admin' && client.clinic_id && user.clinic_id !== client.clinic_id) {
+      throw new ForbiddenException('Access denied: You do not have access to this client');
+    }
+
+    const taskQuery = `
+      id,
+      title,
+      description,
+      status,
+      priority,
+      due_date,
+      assigned_to,
+      client_id,
+      patient_id,
+      clinic_id,
+      organization_id,
+      created_by,
+      created_at,
+      updated_at,
+      assigned_user:users!assigned_to(
+        id,
+        full_name
+      ),
+      client:clients!client_id(
+        id,
+        user_id,
+        users!user_id(
+          id,
+          full_name
+        )
+      ),
+      patient:pets!patient_id(
+        id,
+        name
+      )
+    `;
+
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('tasks')
+      .select(taskQuery)
+      .eq('client_id', clientId)
+      .order('due_date', { ascending: true })
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching tasks by client:', error);
+      throw new InternalServerErrorException(
+        `Failed to fetch tasks: ${error.message || 'Unknown error'}`,
+      );
+    }
+
+    if (!data) {
+      return [];
+    }
+
+    // Transform to match frontend DashboardTask format
+    return data.map((task: any) => {
+      // Handle assigned_user (can be array or single object)
+      const assignedUser = Array.isArray(task.assigned_user)
+        ? task.assigned_user[0]
+        : task.assigned_user;
+      
+      // Handle client (can be array or single object or null)
+      const client = task.client_id
+        ? (Array.isArray(task.client) ? task.client[0] : task.client)
+        : null;
+      
+      // Handle client user (can be array or single object or null)
+      const clientUser = client?.users
+        ? (Array.isArray(client.users) ? client.users[0] : client.users)
+        : null;
+      
+      // Handle patient (can be array or single object or null)
+      const patient = task.patient_id
+        ? (Array.isArray(task.patient) ? task.patient[0] : task.patient)
+        : null;
+
+      // Helper to get initials
+      const getInitials = (name: string): string => {
+        return name
+          .split(' ')
+          .map((n) => n[0])
+          .join('')
+          .toUpperCase()
+          .slice(0, 2);
+      };
+
+      return {
+        id: task.id,
+        title: task.title,
+        client: clientUser?.full_name || 'No Client',
+        pet: patient?.name || 'No Patient',
+        dueDate: task.due_date,
+        priority: task.priority as 'high' | 'medium' | 'low',
+        status: task.status as 'open' | 'in_progress' | 'closed',
         assignedTo: assignedUser
           ? {
               id: assignedUser.id,
@@ -431,7 +555,7 @@ export class TasksService {
       clinic_id: user.clinic_id,
       organization_id: user.organization_id,
       created_by: user.user_id,
-      status: createTaskDto.status || 'pending',
+      status: createTaskDto.status || 'open',
       priority: createTaskDto.priority || 'medium',
     };
 

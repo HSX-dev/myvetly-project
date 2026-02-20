@@ -40,6 +40,11 @@ export class TasksController {
     return this.tasksService.findByPet(petId, user);
   }
 
+  @Get('client/:clientId')
+  findByClient(@Param('clientId') clientId: string, @GetUser() user: any) {
+    return this.tasksService.findByClient(clientId, user);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @GetUser() user: any) {
     return this.tasksService.findOne(id, user);
