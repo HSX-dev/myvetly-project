@@ -85,12 +85,13 @@ export class AppointmentsController {
   }
 
   @Patch(':id')
-  update(
+  @HttpCode(HttpStatus.OK)
+  async update(
     @Param('id') id: string,
     @Body(CleanDtoPipe) updateAppointmentDto: UpdateAppointmentDto,
     @GetUser() user: any,
   ) {
-    return this.appointmentsService.update(id, updateAppointmentDto, user);
+    return await this.appointmentsService.update(id, updateAppointmentDto, user);
   }
 
   @Patch(':id/status')

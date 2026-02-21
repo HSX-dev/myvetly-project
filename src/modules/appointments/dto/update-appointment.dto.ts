@@ -6,8 +6,11 @@ import {
   IsEnum,
   IsUUID,
   IsNumber,
+  ValidateIf,
+  Validate,
 } from 'class-validator';
 import { AppointmentStatus } from '../../../utils/enums';
+import { IsFutureDateConstraint } from './create-appointment.dto';
 
 export class UpdateAppointmentDto {
   @Expose()
@@ -28,6 +31,8 @@ export class UpdateAppointmentDto {
   @Expose()
   @IsDateString()
   @IsOptional()
+  @ValidateIf((o) => o.appointment_time !== undefined && o.appointment_time !== null && o.appointment_time !== '')
+  @Validate(IsFutureDateConstraint)
   appointment_time?: string;
 
   @Expose()

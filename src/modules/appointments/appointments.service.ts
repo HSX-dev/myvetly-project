@@ -299,208 +299,432 @@ export class AppointmentsService {
    * Create a new appointment with conflict checking
    */
   async create(createAppointmentDto: CreateAppointmentDto, user: UserContext) {
-    // Check for conflicting appointments if vet_id is provided
-    if (createAppointmentDto.vet_id) {
-      const appointmentStart = new Date(createAppointmentDto.appointment_time);
-      const appointmentEnd = new Date(appointmentStart);
-      appointmentEnd.setMinutes(
-        appointmentEnd.getMinutes() + (createAppointmentDto.estimated_duration || 30),
-      );
-
-      const { data: conflictingAppointments, error: checkError } =
-        await this.supabaseService
-          .getClient()
-          .from('appointments')
-          .select('id, appointment_time, status, vet_id, estimated_duration')
-          .eq('vet_id', createAppointmentDto.vet_id)
-          .in('status', ['requested', 'scheduled', 'checked_in', 'in_progress']);
-
-      if (checkError) {
+    try {
+      // Validate appointment time is in the future
+      const appointmentDate = new Date(createAppointmentDto.appointment_time);
+      const now = new Date();
+      const minFutureTime = new Date(now.getTime() + 60000); // 1 minute buffer for clock differences
+      
+      if (appointmentDate < minFutureTime) {
         throw new BadRequestException(
-          'Unable to verify time slot availability. Please try again.',
+          'Appointment time must be in the future. Cannot create appointments in the past.'
         );
       }
 
-      if (conflictingAppointments && conflictingAppointments.length > 0) {
-        const hasConflict = conflictingAppointments.some((apt: any) => {
-          const aptStart = new Date(apt.appointment_time);
-          const aptEnd = new Date(aptStart);
-          aptEnd.setMinutes(aptEnd.getMinutes() + (apt.estimated_duration || 30));
+      // Check for conflicting appointments if vet_id is provided
+      if (createAppointmentDto.vet_id) {
+        const appointmentStart = new Date(createAppointmentDto.appointment_time);
+        const appointmentEnd = new Date(appointmentStart);
+        appointmentEnd.setMinutes(
+          appointmentEnd.getMinutes() + (createAppointmentDto.estimated_duration || 30),
+        );
 
-          return (
-            appointmentStart.getTime() < aptEnd.getTime() &&
-            appointmentEnd.getTime() > aptStart.getTime()
-          );
-        });
+        const { data: conflictingAppointments, error: checkError } =
+          await this.supabaseService
+            .getClient()
+            .from('appointments')
+            .select('id, appointment_time, status, vet_id, estimated_duration')
+            .eq('vet_id', createAppointmentDto.vet_id)
+            .in('status', ['requested', 'scheduled', 'checked_in', 'in_progress']);
 
-        if (hasConflict) {
+        if (checkError) {
           throw new BadRequestException(
-            'This time slot is no longer available. Please select a different time.',
+            'Unable to verify time slot availability. Please try again.',
           );
         }
+
+        if (conflictingAppointments && conflictingAppointments.length > 0) {
+          const hasConflict = conflictingAppointments.some((apt: any) => {
+            const aptStart = new Date(apt.appointment_time);
+            const aptEnd = new Date(aptStart);
+            aptEnd.setMinutes(aptEnd.getMinutes() + (apt.estimated_duration || 30));
+
+            return (
+              appointmentStart.getTime() < aptEnd.getTime() &&
+              appointmentEnd.getTime() > aptStart.getTime()
+            );
+          });
+
+          if (hasConflict) {
+            throw new BadRequestException(
+              'This time slot is no longer available. Please select a different time.',
+            );
+          }
+        }
       }
-    }
 
-    // Check if this is a telehealth appointment
-    const isTelehealth = this.isTelehealthAppointment(createAppointmentDto.service_type);
-    const isBlockAppointment = createAppointmentDto.service_type === 'Block';
+      // Check if this is a telehealth appointment
+      const isTelehealth = this.isTelehealthAppointment(createAppointmentDto.service_type);
+      const isBlockAppointment = createAppointmentDto.service_type === 'Block';
 
-    // Build insert data
-    const insertData: any = {
-      tenant_id: createAppointmentDto.clinic_id, // Use tenant_id for clinic reference
-      appointment_time: createAppointmentDto.appointment_time,
-      service_type: createAppointmentDto.service_type,
-      status: createAppointmentDto.status || 'scheduled',
-      symptoms: createAppointmentDto.symptoms,
-      notes: createAppointmentDto.notes,
-      client_notes: createAppointmentDto.client_notes,
-      reason_for_consultation: createAppointmentDto.reason_for_consultation,
-      estimated_duration: createAppointmentDto.estimated_duration || 30,
-      emergency_level: createAppointmentDto.emergency_level || 'low',
-      is_telehealth: isTelehealth,
-      booking_reference: createAppointmentDto.booking_reference,
-      payment_status: createAppointmentDto.payment_status,
-      payment_reference: createAppointmentDto.payment_reference,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
+      // Build insert data
+      const insertData: any = {
+        tenant_id: createAppointmentDto.clinic_id, // Use tenant_id for clinic reference
+        appointment_time: createAppointmentDto.appointment_time,
+        service_type: createAppointmentDto.service_type,
+        status: createAppointmentDto.status || 'scheduled',
+        symptoms: createAppointmentDto.symptoms,
+        notes: createAppointmentDto.notes,
+        client_notes: createAppointmentDto.client_notes,
+        reason_for_consultation: createAppointmentDto.reason_for_consultation,
+        estimated_duration: createAppointmentDto.estimated_duration || 30,
+        emergency_level: createAppointmentDto.emergency_level || 'low',
+        is_telehealth: isTelehealth,
+        booking_reference: createAppointmentDto.booking_reference,
+        payment_status: createAppointmentDto.payment_status,
+        payment_reference: createAppointmentDto.payment_reference,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
 
-    // Only include vet_id if provided
-    if (createAppointmentDto.vet_id) {
-      insertData.vet_id = createAppointmentDto.vet_id;
-    }
+      // Only include vet_id if provided and validate it exists
+      if (createAppointmentDto.vet_id) {
+        // Validate that the vet exists in the users table
+        const { data: vet, error: vetError } = await this.supabaseService
+          .getClient()
+          .from('users')
+          .select('id')
+          .eq('id', createAppointmentDto.vet_id)
+          .single();
 
-    // Only add client_id and pet_id if not a Block appointment
-    if (!isBlockAppointment) {
-      if (createAppointmentDto.client_id) {
-        insertData.client_id = createAppointmentDto.client_id;
+        if (vetError || !vet) {
+          throw new BadRequestException(
+            `Invalid vet_id: The veterinarian with ID ${createAppointmentDto.vet_id} does not exist in the system.`
+          );
+        }
+        insertData.vet_id = createAppointmentDto.vet_id;
       }
-      if (createAppointmentDto.pet_id) {
-        insertData.pet_id = createAppointmentDto.pet_id;
-      }
-    }
 
-    // Remove undefined/null values
-    Object.keys(insertData).forEach((key) => {
-      if (insertData[key] === undefined || insertData[key] === null) {
-        delete insertData[key];
+      // Only add client_id and pet_id if not a Block appointment
+      if (!isBlockAppointment) {
+        if (createAppointmentDto.client_id) {
+          insertData.client_id = createAppointmentDto.client_id;
+        }
+        if (createAppointmentDto.pet_id) {
+          insertData.pet_id = createAppointmentDto.pet_id;
+        }
       }
-    });
 
-    const { data, error } = await this.supabaseService
-      .getClient()
-      .from('appointments')
-      .insert([insertData])
-      .select(`
-        id,
-        appointment_time,
-        service_type,
-        status,
-        payment_status,
-        payment_reference,
-        booking_reference,
-        symptoms,
-        notes,
-        estimated_duration,
-        emergency_level,
-        created_at,
-        updated_at,
-        pet_id,
-        client_id,
-        vet_id,
-        pets(
+      // Remove undefined/null values
+      Object.keys(insertData).forEach((key) => {
+        if (insertData[key] === undefined || insertData[key] === null) {
+          delete insertData[key];
+        }
+      });
+
+      const { data, error } = await this.supabaseService
+        .getClient()
+        .from('appointments')
+        .insert([insertData])
+        .select(`
           id,
-          name,
-          species,
-          breed,
-          clients(
+          appointment_time,
+          service_type,
+          status,
+          payment_status,
+          payment_reference,
+          booking_reference,
+          symptoms,
+          notes,
+          estimated_duration,
+          emergency_level,
+          created_at,
+          updated_at,
+          pet_id,
+          client_id,
+          vet_id,
+          pets(
             id,
-            phone,
-            users!user_id(
+            name,
+            species,
+            breed,
+            clients(
               id,
-              full_name,
-              email
+              phone,
+              users!user_id(
+                id,
+                full_name,
+                email
+              )
             )
+          ),
+          users!vet_id(
+            id,
+            full_name
           )
-        ),
-        users!vet_id(
-          id,
-          full_name
-        )
-      `)
-      .single();
+        `)
+        .single();
 
-    if (error) throw error;
-    return data;
+      if (error) {
+        console.error('Supabase error creating appointment:', JSON.stringify(error, null, 2));
+        console.error('Error code:', error.code);
+        console.error('Error message:', error.message);
+        console.error('Error details:', error.details);
+        console.error('Error hint:', error.hint);
+        
+        // Handle specific database errors
+        if (error.code === '23503') {
+          // Foreign key violation
+          const detail = error.details || error.message || 'Referenced record does not exist';
+          throw new BadRequestException(
+            `Invalid reference: ${detail}. Please check that the client, pet, vet, or clinic IDs are valid.`
+          );
+        }
+        
+        if (error.code === '23505') {
+          // Unique constraint violation
+          const detail = error.details || error.message || '';
+          
+          // Check if it's a vet_id + appointment_time conflict
+          if (detail.includes('vet_id') && detail.includes('appointment_time')) {
+            throw new BadRequestException(
+              'This time slot is already booked for this veterinarian. Please select a different time.'
+            );
+          }
+          
+          // Check if it's a general duplicate entry
+          if (detail.includes('already exists')) {
+            throw new BadRequestException(
+              'This appointment already exists. Please check the appointment details and try again.'
+            );
+          }
+          
+          // Generic constraint violation message
+          throw new BadRequestException(
+            'Unable to create appointment: This appointment conflicts with an existing record. Please check the details and try again.'
+          );
+        }
+        
+        if (error.code === '23514') {
+          // Check constraint violation
+          throw new BadRequestException(
+            `Invalid appointment data: ${error.message || 'Data violates database constraints'}.`
+          );
+        }
+        
+        if (error.code === 'PGRST116') {
+          throw new NotFoundException('Appointment not found after creation');
+        }
+        
+        // Generic error handling
+        throw new InternalServerErrorException(
+          `Failed to create appointment: ${error.message || 'Unknown database error'}`
+        );
+      }
+      
+      return data;
+    } catch (error) {
+      // Re-throw HTTP exceptions as-is
+      if (error instanceof BadRequestException || 
+          error instanceof NotFoundException || 
+          error instanceof InternalServerErrorException) {
+        console.error('HTTP Exception thrown:', error.message);
+        throw error;
+      }
+      
+      // Handle unexpected errors
+      console.error('Unexpected error creating appointment:', error);
+      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+      console.error('Error type:', error?.constructor?.name);
+      throw new InternalServerErrorException(
+        `Failed to create appointment: ${error instanceof Error ? error.message : 'Unknown error occurred'}`
+      );
+    }
   }
 
   /**
    * Update an existing appointment
    */
   async update(id: string, updateAppointmentDto: UpdateAppointmentDto, user: UserContext) {
-    const updateData: any = {
-      ...updateAppointmentDto,
-      updated_at: new Date().toISOString(),
-    };
-
-    // Remove undefined/null values
-    Object.keys(updateData).forEach((key) => {
-      if (updateData[key] === undefined || updateData[key] === null) {
-        delete updateData[key];
+    try {
+      // Validate appointment time is in the future if provided
+      if (updateAppointmentDto.appointment_time) {
+        const appointmentDate = new Date(updateAppointmentDto.appointment_time);
+        const now = new Date();
+        const minFutureTime = new Date(now.getTime() + 60000); // 1 minute buffer for clock differences
+        
+        if (appointmentDate < minFutureTime) {
+          throw new BadRequestException(
+            'Appointment time must be in the future. Cannot update appointments to past times.'
+          );
+        }
       }
-    });
 
-    const { data, error } = await this.supabaseService
-      .getClient()
-      .from('appointments')
-      .update(updateData)
-      .eq('id', id)
-      .select(`
-        id,
-        appointment_time,
-        service_type,
-        status,
-        payment_status,
-        payment_reference,
-        booking_reference,
-        symptoms,
-        notes,
-        estimated_duration,
-        emergency_level,
-        created_at,
-        updated_at,
-        pet_id,
-        client_id,
-        vet_id,
-        pets(
-          id,
-          name,
-          species,
-          breed,
-          clients(
-            id,
-            phone,
-            users!user_id(
-              id,
-              full_name,
-              email
-            )
-          )
-        ),
-        users!vet_id(
-          id,
-          full_name
-        )
-      `)
-      .single();
+      // Validate foreign keys if provided
+      if (updateAppointmentDto.vet_id) {
+        const { data: vetExists, error: vetError } = await this.supabaseService
+          .getClient()
+          .from('users')
+          .select('id')
+          .eq('id', updateAppointmentDto.vet_id)
+          .single();
 
-    if (error) {
-      if (error.code === 'PGRST116') {
+        if (vetError || !vetExists) {
+          throw new BadRequestException(
+            `Invalid reference: Key (vet_id)=(${updateAppointmentDto.vet_id}) is not present in table "users". Please check that the vet ID is valid.`
+          );
+        }
+      }
+
+      if (updateAppointmentDto.client_id) {
+        const { data: clientExists, error: clientError } = await this.supabaseService
+          .getClient()
+          .from('clients')
+          .select('id')
+          .eq('id', updateAppointmentDto.client_id)
+          .single();
+
+        if (clientError || !clientExists) {
+          throw new BadRequestException(
+            `Invalid reference: Key (client_id)=(${updateAppointmentDto.client_id}) is not present in table "clients". Please check that the client ID is valid.`
+          );
+        }
+      }
+
+      if (updateAppointmentDto.pet_id) {
+        const { data: petExists, error: petError } = await this.supabaseService
+          .getClient()
+          .from('pets')
+          .select('id')
+          .eq('id', updateAppointmentDto.pet_id)
+          .single();
+
+        if (petError || !petExists) {
+          throw new BadRequestException(
+            `Invalid reference: Key (pet_id)=(${updateAppointmentDto.pet_id}) is not present in table "pets". Please check that the pet ID is valid.`
+          );
+        }
+      }
+
+      // Check if appointment exists
+      const existingAppointment = await this.findOne(id);
+      if (!existingAppointment) {
         throw new NotFoundException(`Appointment with id ${id} not found`);
       }
-      throw error;
+
+      const updateData: any = {
+        ...updateAppointmentDto,
+        updated_at: new Date().toISOString(),
+      };
+
+      // Remove undefined/null values
+      Object.keys(updateData).forEach((key) => {
+        if (updateData[key] === undefined || updateData[key] === null) {
+          delete updateData[key];
+        }
+      });
+
+      const { data, error } = await this.supabaseService
+        .getClient()
+        .from('appointments')
+        .update(updateData)
+        .eq('id', id)
+        .select(`
+          id,
+          appointment_time,
+          service_type,
+          status,
+          payment_status,
+          payment_reference,
+          booking_reference,
+          symptoms,
+          notes,
+          estimated_duration,
+          emergency_level,
+          created_at,
+          updated_at,
+          pet_id,
+          client_id,
+          vet_id,
+          pets(
+            id,
+            name,
+            species,
+            breed,
+            clients(
+              id,
+              phone,
+              users!user_id(
+                id,
+                full_name,
+                email
+              )
+            )
+          ),
+          users!vet_id(
+            id,
+            full_name
+          )
+        `)
+        .single();
+
+      if (error) {
+        // Handle PostgrestError
+        if (error.code === 'PGRST116') {
+          throw new NotFoundException(`Appointment with id ${id} not found`);
+        }
+
+        // Handle foreign key violations
+        if (error.code === '23503') {
+          const detail = error.details || error.message || 'Referenced record does not exist';
+          throw new BadRequestException(
+            `Invalid reference: ${detail}. Please check that the client, pet, vet, or clinic IDs are valid.`
+          );
+        }
+
+        // Handle constraint violations (unique constraints)
+        if (error.code === '23505') {
+          const detail = error.details || error.message || '';
+          
+          // Check if it's a vet_id + appointment_time conflict
+          if (detail.includes('vet_id') && detail.includes('appointment_time')) {
+            throw new BadRequestException(
+              'This time slot is already booked for this veterinarian. Please select a different time.'
+            );
+          }
+          
+          // Check if it's a general duplicate entry
+          if (detail.includes('already exists')) {
+            throw new BadRequestException(
+              'This appointment already exists. Please check the appointment details and try again.'
+            );
+          }
+          
+          // Generic constraint violation message
+          throw new BadRequestException(
+            'Unable to update appointment: This appointment conflicts with an existing record. Please check the details and try again.'
+          );
+        }
+
+        // Handle other database errors
+        if (error.code && error.code.startsWith('23')) {
+          const detail = error.details || error.message || 'Database constraint violation';
+          throw new BadRequestException(`Database error: ${detail}`);
+        }
+
+        // Generic Supabase error
+        throw new InternalServerErrorException(
+          `Failed to update appointment: ${error.message || 'Unknown database error'}`
+        );
+      }
+
+      return data;
+    } catch (error) {
+      // Re-throw HTTP exceptions as-is
+      if (error instanceof BadRequestException || 
+          error instanceof NotFoundException || 
+          error instanceof InternalServerErrorException) {
+        throw error;
+      }
+      
+      // Handle unexpected errors
+      console.error('Unexpected error updating appointment:', error);
+      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+      console.error('Error type:', error?.constructor?.name);
+      throw new InternalServerErrorException(
+        `Failed to update appointment: ${error instanceof Error ? error.message : 'Unknown error occurred'}`
+      );
     }
-    return data;
   }
 
   /**
