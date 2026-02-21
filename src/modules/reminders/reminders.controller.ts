@@ -1,6 +1,7 @@
-import { Controller, Get, Post, Param, Body, Query, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, HttpCode, HttpStatus } from '@nestjs/common';
 import { RemindersService } from './reminders.service';
 import { CreateReminderDto } from './dto/create-reminder.dto';
+import { UpdateReminderDto } from './dto/update-reminder.dto';
 import { GetUser } from '../../utils/decorators/get-user.decorator';
 import { CleanDtoPipe } from '../../utils/pipes/clean-dto.pipe';
 
@@ -22,12 +23,18 @@ export class RemindersController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   create(@Body(CleanDtoPipe) createReminderDto: CreateReminderDto, @GetUser() user: any) {
-    // Handle field name mapping if task_title is missing but message is present
+    // Handle field name mapping if task_title is missing (PawMD sends title, others may send message)
+    if (!createReminderDto.task_title && (createReminderDto as any).title) {
+      createReminderDto.task_title = (createReminderDto as any).title;
+    }
     if (!createReminderDto.task_title && (createReminderDto as any).message) {
       createReminderDto.task_title = (createReminderDto as any).message;
     }
 
-    // Handle field name mapping if due_date is missing but reminder_date is present
+    // Handle field name mapping if due_date is missing (PawMD sends start_date, others may send reminder_date)
+    if (!createReminderDto.due_date && (createReminderDto as any).start_date) {
+      createReminderDto.due_date = (createReminderDto as any).start_date;
+    }
     if (!createReminderDto.due_date && (createReminderDto as any).reminder_date) {
       createReminderDto.due_date = (createReminderDto as any).reminder_date;
     }
@@ -38,6 +45,20 @@ export class RemindersController {
     }
 
     return this.remindersService.create(createReminderDto, user);
+  }
+
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @Body(CleanDtoPipe) updateReminderDto: UpdateReminderDto,
+    @GetUser() user: any,
+  ) {
+    return this.remindersService.update(id, updateReminderDto, user);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string, @GetUser() user: any) {
+    return this.remindersService.remove(id, user);
   }
 }
 
