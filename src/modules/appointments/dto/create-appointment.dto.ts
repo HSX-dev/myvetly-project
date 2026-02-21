@@ -9,8 +9,28 @@ import {
   IsBoolean,
   ValidateIf,
   IsIn,
+  Validate,
+  ValidationArguments,
+  ValidatorConstraint,
+  ValidatorConstraintInterface,
 } from 'class-validator';
 import { AppointmentStatus } from '../../../utils/enums';
+
+@ValidatorConstraint({ name: 'isFutureDate', async: false })
+export class IsFutureDateConstraint implements ValidatorConstraintInterface {
+  validate(dateString: string, args: ValidationArguments) {
+    if (!dateString) return false;
+    const appointmentDate = new Date(dateString);
+    const now = new Date();
+    // Allow appointments at least 1 minute in the future (buffer for clock differences)
+    const minFutureTime = new Date(now.getTime() + 60000); // 1 minute buffer
+    return appointmentDate >= minFutureTime;
+  }
+
+  defaultMessage(args: ValidationArguments) {
+    return 'Appointment time must be in the future. Cannot create appointments in the past.';
+  }
+}
 
 export class CreateAppointmentDto {
   // Optional for Block appointments
@@ -44,6 +64,7 @@ export class CreateAppointmentDto {
 
   @Expose()
   @IsDateString()
+  @Validate(IsFutureDateConstraint)
   appointment_time: string;
 
   @Expose()
