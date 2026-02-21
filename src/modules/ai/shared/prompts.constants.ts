@@ -330,7 +330,7 @@ EXAMPLE 1: Pup-Peroni or similar processed treats
 - beneficial_components: 30-40 (minimal beneficial nutrients)
 - harmful_components: 40-50 (propylene glycol, artificial colors, BHA all present)
 - pet_specific: 70-90 (depends on pet)
-- FINAL SCORE: 45-60 range ("acceptable" at best, likely "poor")
+- FINAL SCORE: 47-58 range ("acceptable" at best, likely "poor")
 
 EXAMPLE 2: Simple homemade or natural baked treats
 - Ingredients: Oats, peanut butter, pumpkin, egg
@@ -339,7 +339,7 @@ EXAMPLE 2: Simple homemade or natural baked treats
 - beneficial_components: 70-80 (fiber from oats, vitamins from pumpkin)
 - harmful_components: 95-100 (no harmful additives)
 - pet_specific: 80-95 (depends on allergies)
-- FINAL SCORE: 80-90 range ("good" to "excellent")
+- FINAL SCORE: 82-91 range ("good" to "excellent")
 
 EXAMPLE 3: Premium single-ingredient freeze-dried treat
 - Ingredients: Beef liver
@@ -348,7 +348,7 @@ EXAMPLE 3: Premium single-ingredient freeze-dried treat
 - beneficial_components: 75-85 (natural vitamins, iron)
 - harmful_components: 100 (nothing harmful)
 - pet_specific: 85-95
-- FINAL SCORE: 85-95 range ("good" to "excellent")
+- FINAL SCORE: 86-94 range ("good" to "excellent")
 
 === CRITICAL RULES ===
 
@@ -358,6 +358,38 @@ EXAMPLE 3: Premium single-ingredient freeze-dried treat
 4. Multiple red flag ingredients = cumulative penalties
 5. "Safe to eat" does NOT mean "healthy" - score accordingly
 6. When in doubt, score LOWER for processed foods, HIGHER for whole foods
+
+=== SCORE PRECISION REQUIREMENTS ===
+
+CRITICAL: Scores must be PRECISE integers, NOT rounded to 5s or 10s.
+
+BAD SCORES (too common, avoid these):
+- 85, 80, 75, 70, 65, 60, 55, 50, 45, 40
+
+GOOD SCORES (use specific values):
+- 87, 82, 78, 73, 67, 62, 58, 53, 47, 42
+
+SCORING RULES:
+1. NEVER default to 85 - this is the most overused score
+2. Calculate each factor independently, then compute weighted average
+3. Final score should reflect actual weighted calculation, not a "feels right" number
+4. Use the FULL range: excellent foods can be 91, 94, 97, or even 100
+5. Poor foods should be 31, 38, 44 - not just 35, 40, 45
+6. Each factor score (ingredient_quality, nutritional_balance, etc.) should also be precise
+
+WEIGHTED CALCULATION (follow this exactly):
+final_score = (ingredient_quality × 0.30) + (nutritional_balance × 0.25) + (beneficial_components × 0.20) + (harmful_components × 0.15) + (pet_specific × 0.10)
+
+Example calculation:
+- ingredient_quality: 72
+- nutritional_balance: 68
+- beneficial_components: 54
+- harmful_components: 88
+- pet_specific: 81
+
+final_score = (72 × 0.30) + (68 × 0.25) + (54 × 0.20) + (88 × 0.15) + (81 × 0.10)
+            = 21.6 + 17.0 + 10.8 + 13.2 + 8.1
+            = 70.7 → 71 (round to nearest integer)
 
 PawMD Score Labels:
 - 90-100: "excellent" - Outstanding choice (whole foods, single ingredients, homemade quality)

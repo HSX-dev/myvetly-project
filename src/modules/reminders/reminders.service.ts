@@ -8,6 +8,79 @@ export class RemindersService {
   constructor(private supabaseService: SupabaseService) {}
 
   /**
+   * Get upcoming reminders for the user's clinic (or all for super_admin), ordered by due_date.
+   */
+  async findUpcoming(user: UserContext, limit = 10) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayISO = today.toISOString().split('T')[0];
+
+    let query = this.supabaseService
+      .getClient()
+      .from('preventive_care_tasks')
+      .select(`
+        id,
+        task_title,
+        task_type,
+        due_date,
+        status,
+        description,
+        created_at,
+        completed_at,
+        pet_id,
+        pets(id, name)
+      `)
+      .neq('status', 'completed')
+      .gte('due_date', todayISO)
+      .order('due_date', { ascending: true })
+      .limit(Math.min(limit, 100));
+
+    if (user.role !== 'super_admin' && user.clinic_id) {
+      query = query.eq('clinic_id', user.clinic_id);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Error fetching upcoming reminders:', error);
+      throw new InternalServerErrorException(
+        `Failed to fetch upcoming reminders: ${error.message || 'Unknown error'}`,
+      );
+    }
+
+    if (!data || data.length === 0) {
+      return [];
+    }
+
+    return data.map((task: any) => {
+      let status: 'Pending' | 'Completed' | 'Overdue' = 'Pending';
+      if (task.status === 'completed') {
+        status = 'Completed';
+      } else if (task.due_date) {
+        const dueDate = new Date(task.due_date);
+        if (dueDate < today) {
+          status = 'Overdue';
+        }
+      }
+      return {
+        id: task.id,
+        name: task.task_title || '',
+        due_date: task.due_date,
+        trigger_product: task.task_type === 'medication' ? task.description : undefined,
+        status,
+        template: task.task_type,
+        notifications: [],
+        created_at: task.created_at,
+        task_title: task.task_title,
+        task_type: task.task_type,
+        description: task.description,
+        pet_id: task.pet_id,
+        pet: task.pets,
+      };
+    });
+  }
+
+  /**
    * Get reminders for a specific pet
    */
   async findByPet(petId: string, user: UserContext) {

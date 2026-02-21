@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Param, Body, Query, HttpCode, HttpStatus } from '@nestjs/common';
 import { RemindersService } from './reminders.service';
 import { CreateReminderDto } from './dto/create-reminder.dto';
 import { GetUser } from '../../utils/decorators/get-user.decorator';
@@ -7,6 +7,12 @@ import { CleanDtoPipe } from '../../utils/pipes/clean-dto.pipe';
 @Controller('reminders')
 export class RemindersController {
   constructor(private readonly remindersService: RemindersService) { }
+
+  @Get('upcoming')
+  findUpcoming(@Query('limit') limit?: string, @GetUser() user?: any) {
+    const limitNum = limit ? parseInt(limit, 10) : 10;
+    return this.remindersService.findUpcoming(user, limitNum);
+  }
 
   @Get('pet/:petId')
   findByPet(@Param('petId') petId: string, @GetUser() user: any) {
