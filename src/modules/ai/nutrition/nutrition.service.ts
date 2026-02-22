@@ -153,6 +153,7 @@ export class NutritionService extends BaseAiService {
       raw: 'Raw',
       home_cooked: 'Home-cooked',
       mixed: 'Mixed diet',
+      pawla_decide: 'Let AI decide based on breed, age, and health',
     };
 
     // Map goal to readable format
@@ -162,6 +163,25 @@ export class NutritionService extends BaseAiService {
       weight_gain: 'Weight gain',
       not_sure: 'Not sure (default to maintain)',
     };
+
+    const isPawlaDecide = prefs.diet_style === 'pawla_decide';
+
+    const ownerPrefsSection = isPawlaDecide
+      ? `OWNER PREFERENCES:
+- Diet Style: AI MUST DECIDE the optimal diet style (kibble, raw, home-cooked, canned, or mixed) based on:
+  - Breed-specific nutritional needs (${pet.breed || 'Unknown'})
+  - Age and life stage (${ageStr})
+  - Health conditions and medical history
+  - Activity level (${avgActivity}/10)
+${prefs.diet_hint ? `  - Owner hint/preference: "${prefs.diet_hint}"` : ''}
+- Current Food: ${prefs.food_brand_recipe || 'Not specified'}
+
+First determine the best diet style for this pet, then provide the full nutrition plan including recommended proteins and carbs.`
+      : `OWNER PREFERENCES:
+- Diet Style: ${dietStyleMap[prefs.diet_style] || prefs.diet_style}
+- Current Food: ${prefs.food_brand_recipe || 'Not specified'}
+${prefs.main_proteins ? `- Main Proteins: ${prefs.main_proteins}` : ''}
+${prefs.main_carbs ? `- Main Carbs: ${prefs.main_carbs}` : ''}`;
 
     return `NUTRITION PLAN REQUEST
 
@@ -177,11 +197,7 @@ PET PROFILE:
 - Known Allergies: ${pet.allergies || 'None'}
 - Medical History: ${pet.medical_history || 'None recorded'}
 
-OWNER PREFERENCES:
-- Diet Style: ${dietStyleMap[prefs.diet_style] || prefs.diet_style}
-- Current Food: ${prefs.food_brand_recipe || 'Not specified'}
-${prefs.main_proteins ? `- Main Proteins: ${prefs.main_proteins}` : ''}
-${prefs.main_carbs ? `- Main Carbs: ${prefs.main_carbs}` : ''}
+${ownerPrefsSection}
 - Goal: ${goalMap[prefs.goal] || prefs.goal}
 - Allergies/Intolerances: ${prefs.allergies_intolerances?.length ? prefs.allergies_intolerances.join(', ') : 'None'}
 - Budget Preference: ${prefs.budget_preference ? prefs.budget_preference.charAt(0).toUpperCase() + prefs.budget_preference.slice(1) : 'Not specified'}

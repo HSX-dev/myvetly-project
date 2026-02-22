@@ -5,18 +5,13 @@ import {
   IsUUID,
   IsBoolean,
   IsArray,
-  IsEnum,
   IsDateString,
   IsIn,
   ArrayMinSize,
   ValidateIf,
   Matches,
 } from 'class-validator';
-import {
-  ReminderCategory,
-  ReminderStatus,
-  REPEAT_INTERVALS,
-} from './create-reminder.dto';
+import { REPEAT_INTERVALS } from './create-reminder.dto';
 
 export class UpdateReminderDto {
   @Expose()
@@ -25,9 +20,9 @@ export class UpdateReminderDto {
   pet_id?: string;
 
   @Expose()
-  @IsEnum(ReminderCategory)
   @IsOptional()
-  category?: ReminderCategory;
+  @IsString()
+  category?: string;
 
   @Expose()
   @IsString()
@@ -87,7 +82,7 @@ export class UpdateReminderDto {
   photo_url?: string;
 
   @Expose()
-  @IsEnum(ReminderStatus)
+  @IsString()
   @IsOptional()
-  status?: ReminderStatus;
+  status?: string;
 }

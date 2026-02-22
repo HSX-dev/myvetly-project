@@ -46,7 +46,7 @@ import configuration from './config/configuration';
       envFilePath:
         process.env.NODE_ENV === 'production'
           ? '.env'
-          : ['.env.local', '.env'], // Try .env.local first, then .env
+          : ['.env.local', '.env.development', '.env'], // Try .env.local first, then .env.development, then .env
       load: [configuration],
     }),
     ThrottlerModule.forRoot([

@@ -114,7 +114,7 @@ async function bootstrap() {
   }
 
   const port = configService.get<number>('port') || 8000;
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0'); // bind all interfaces so mobile devices on LAN can reach the API
 
   // Environment-specific startup messages
   if (isDevelopment) {

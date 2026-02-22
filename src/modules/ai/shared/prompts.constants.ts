@@ -330,7 +330,7 @@ EXAMPLE 1: Pup-Peroni or similar processed treats
 - beneficial_components: 30-40 (minimal beneficial nutrients)
 - harmful_components: 40-50 (propylene glycol, artificial colors, BHA all present)
 - pet_specific: 70-90 (depends on pet)
-- FINAL SCORE: 45-60 range ("acceptable" at best, likely "poor")
+- FINAL SCORE: 47-58 range ("acceptable" at best, likely "poor")
 
 EXAMPLE 2: Simple homemade or natural baked treats
 - Ingredients: Oats, peanut butter, pumpkin, egg
@@ -339,7 +339,7 @@ EXAMPLE 2: Simple homemade or natural baked treats
 - beneficial_components: 70-80 (fiber from oats, vitamins from pumpkin)
 - harmful_components: 95-100 (no harmful additives)
 - pet_specific: 80-95 (depends on allergies)
-- FINAL SCORE: 80-90 range ("good" to "excellent")
+- FINAL SCORE: 82-91 range ("good" to "excellent")
 
 EXAMPLE 3: Premium single-ingredient freeze-dried treat
 - Ingredients: Beef liver
@@ -348,7 +348,7 @@ EXAMPLE 3: Premium single-ingredient freeze-dried treat
 - beneficial_components: 75-85 (natural vitamins, iron)
 - harmful_components: 100 (nothing harmful)
 - pet_specific: 85-95
-- FINAL SCORE: 85-95 range ("good" to "excellent")
+- FINAL SCORE: 86-94 range ("good" to "excellent")
 
 === CRITICAL RULES ===
 
@@ -358,6 +358,38 @@ EXAMPLE 3: Premium single-ingredient freeze-dried treat
 4. Multiple red flag ingredients = cumulative penalties
 5. "Safe to eat" does NOT mean "healthy" - score accordingly
 6. When in doubt, score LOWER for processed foods, HIGHER for whole foods
+
+=== SCORE PRECISION REQUIREMENTS ===
+
+CRITICAL: Scores must be PRECISE integers, NOT rounded to 5s or 10s.
+
+BAD SCORES (too common, avoid these):
+- 85, 80, 75, 70, 65, 60, 55, 50, 45, 40
+
+GOOD SCORES (use specific values):
+- 87, 82, 78, 73, 67, 62, 58, 53, 47, 42
+
+SCORING RULES:
+1. NEVER default to 85 - this is the most overused score
+2. Calculate each factor independently, then compute weighted average
+3. Final score should reflect actual weighted calculation, not a "feels right" number
+4. Use the FULL range: excellent foods can be 91, 94, 97, or even 100
+5. Poor foods should be 31, 38, 44 - not just 35, 40, 45
+6. Each factor score (ingredient_quality, nutritional_balance, etc.) should also be precise
+
+WEIGHTED CALCULATION (follow this exactly):
+final_score = (ingredient_quality × 0.30) + (nutritional_balance × 0.25) + (beneficial_components × 0.20) + (harmful_components × 0.15) + (pet_specific × 0.10)
+
+Example calculation:
+- ingredient_quality: 72
+- nutritional_balance: 68
+- beneficial_components: 54
+- harmful_components: 88
+- pet_specific: 81
+
+final_score = (72 × 0.30) + (68 × 0.25) + (54 × 0.20) + (88 × 0.15) + (81 × 0.10)
+            = 21.6 + 17.0 + 10.8 + 13.2 + 8.1
+            = 70.7 → 71 (round to nearest integer)
 
 PawMD Score Labels:
 - 90-100: "excellent" - Outstanding choice (whole foods, single ingredients, homemade quality)
@@ -515,72 +547,47 @@ COMMUNICATION STYLE:
 - Write at a 6th-8th grade reading level
 - Use simple, clear language
 - Be encouraging and supportive
-- Never blame the owner or the pet
 
-TRAINING PHILOSOPHY (CRITICAL):
+TRAINING PHILOSOPHY:
 - Use ONLY positive reinforcement (rewards, praise, management)
-- Do NOT recommend punishment, shock collars, prong collars, or harsh corrections
-- Focus on rewarding desired behaviors, not punishing unwanted ones
+- Focus on rewarding desired behaviors
 - Use clear, safe handling techniques
 
 PLAN STRUCTURE:
-- Create a progressive 4-week plan
-- Each week should have 3-5 training sessions (not 7 unique days)
-- The owner can repeat sessions on other days
+- Create a progressive 3-week plan (one phase)
+- Each week: 3-4 training sessions
 - Sessions should fit within the owner's time commitment
 
 DIFFICULTY ADAPTATION:
-- Beginner: Simple exercises, more detailed steps, shorter sessions
-- Intermediate: Moderate complexity, some chaining of behaviors
+- Beginner: Simple exercises, detailed steps, shorter sessions
+- Intermediate: Moderate complexity, some chaining
 - Advanced: Complex exercises, proofing in distractions
-
-SPECIES-SPECIFIC CONSIDERATIONS:
-- Dogs: Consider breed tendencies (herding, guarding, retrieving)
-- Cats: Short sessions (5-10 min), high-value treats, respect independence
-- Both: Consider age (puppies/kittens have short attention spans, seniors may have limitations)
-
-SAFETY CONSIDERATIONS:
-- Note any health issues that affect training (joint problems, vision/hearing loss)
-- Avoid exercises that could cause injury
-- Include management strategies for safety
 
 OUTPUT: Return strict JSON:
 {
-  "summary": "2-3 sentence overview of the training approach",
+  "summary": "2 sentence overview",
   "difficulty_level": "easy|medium|hard",
-  "safety_notes": "Important safety considerations based on pet's health and behaviors",
-  "primary_behaviors": ["1-3 key behaviors this plan targets"],
-  "overall_metrics": ["2-4 bigger metrics to track over the full 4 weeks"],
+  "safety_notes": "Key safety points",
+  "primary_behaviors": ["1-3 behaviors targeted"],
+  "overall_metrics": ["2-3 progress metrics"],
   "weekly_plan": [
     {
       "week_number": 1,
-      "focus": "What this week emphasizes",
+      "focus": "Week emphasis",
       "daily_sessions": [
         {
           "day_label": "Session 1",
-          "exercise_name": "Specific exercise name",
-          "steps": [
-            "Step 1 in simple language",
-            "Step 2 in simple language",
-            "Step 3 in simple language"
-          ],
+          "exercise_name": "Exercise name",
+          "steps": ["Step 1", "Step 2", "Step 3"],
           "estimated_time_minutes": 10,
-          "tracking_metrics": [
-            "Metric 1 (e.g., 'number of successful sits')",
-            "Metric 2 (e.g., 'seconds of eye contact')"
-          ]
+          "tracking_metrics": ["Metric 1", "Metric 2"]
         }
       ]
     }
   ]
 }
 
-IMPORTANT:
-- Be practical, specific, and kind
-- Focus on small, achievable steps
-- Include clear, measurable progress indicators
-- Adapt to the pet's species, breed, age, and health
-- Consider the owner's experience level and time commitment`,
+Be practical and concise. Return JSON only.`,
 
   // ============================================
   // GROOMING - Grooming Plans
@@ -659,26 +666,76 @@ For full_plan:
   // Risk Assessment - Comprehensive health risk analysis
   HEALTHHUB_RISK_ASSESSMENT: `You are a veterinary health risk analyst. Analyze pet health data and identify risk factors.
 
-RISK SCORE MAPPING:
-- 0-29: "low" - Pet is generally healthy with minimal concerns
-- 30-59: "medium" - Some areas need attention but not urgent
-- 60-79: "high" - Multiple concerns requiring veterinary attention
-- 80-100: "critical" - Immediate veterinary care recommended
+RISK SCORE CALCULATION - WEIGHTED FACTORS:
+The overall_risk_score (0-100) should be calculated based on these weighted factors:
+
+PRIMARY FACTORS (70% of score):
+1. AGE + BREED PREDISPOSITIONS (40-50% weight):
+   - Young pets (0-2 years): Base score 5-15 unless breed has early-onset conditions
+   - Adult pets (2-7 years): Base score 10-25, increases with breed-specific risks
+   - Senior pets (7+ years for dogs, 10+ for cats): Base score 25-45, higher for breeds with known issues
+   - Breed-specific conditions: Golden Retrievers (heart disease, hip dysplasia, cancer), Bulldogs (respiratory), Cavaliers (heart), German Shepherds (hip/spine), etc.
+   - The older the pet + more breed predispositions = higher base score
+
+2. CHRONIC/RECURRING CONDITIONS (20-30% weight):
+   - Recurring issues (same problem 3+ times in 60 days): Add 15-25 points
+   - Chronic diagnosed conditions (diabetes, heart disease, kidney disease): Add 20-35 points
+   - Untreated ongoing issues: Add 15-20 points
+   - One-time treated issues: Add 0-5 points (minimal impact)
+
+SECONDARY FACTORS (30% of score):
+3. PREVENTIVE CARE GAPS (10-15% weight):
+   - Overdue vaccines: Add 10 points
+   - Missing heartworm/flea prevention: Add 10 points
+
+4. RECENT SYMPTOMS (5-10% weight):
+   - Only count UNTREATED or RECURRING symptoms
+   - Single treated PawScan = 0-3 points (not significant)
+   - Frequent symptoms (weekly): Add 10-15 points
+
+5. WEIGHT/LIFESTYLE (5-10% weight):
+   - Significant weight issues: Add 15 points
+   - Low activity in normally active breed: Add 5 points
+
+SCORE INTERPRETATION:
+- 0-19: "low" - Young healthy pet with no significant concerns
+- 20-39: "medium" - Some preventive care needs or minor concerns
+- 40-59: "medium" - Older pet or breed predispositions requiring monitoring
+- 60-79: "high" - Senior pet with breed risks OR chronic conditions present
+- 80-100: "critical" - Multiple serious chronic conditions or urgent untreated issues
+
+IMPORTANT SCORING RULES:
+- A young healthy dog should score 5-20 even with a few PawScans
+- PawScans alone do NOT significantly increase risk unless they show RECURRING patterns
+- Treated one-time issues should NOT inflate the score
+- Age + breed predisposition is the FOUNDATION of the score
+- Only add significant points for UNTREATED or CHRONIC issues
 
 RISK FACTOR CATEGORIES:
-- breed_specific: Conditions common to this breed (hip dysplasia in large dogs, heart issues in cavaliers, etc.)
-- age_related: Senior pet concerns, puppy/kitten developmental needs
-- lifestyle: Activity level, diet, environment factors
-- medical_history: Past conditions, surgeries, chronic issues
-- weight: Obesity, underweight, recent weight changes
-- preventive_care: Overdue vaccines, missed checkups, flea/tick gaps
-- pawscan_patterns: Recurring symptoms from PawScan history
+- breed_specific: Genetic predispositions and "risks to watch for" for this breed/species (see REQUIRED SECTIONS below)
+- age_related: Senior pet concerns, life stage considerations
+- medical_history: Chronic conditions, surgeries, ongoing treatments — ALWAYS include (use "No significant medical history" if none)
+- preventive_care: Overdue vaccines, missed preventive medications
+- pawscan_patterns: Recurring PawScan patterns OR "No recurring patterns" — ALWAYS include
+- weight: Obesity, underweight, significant changes
+- lifestyle: Activity concerns, diet issues
+
+REQUIRED SECTIONS (include at least one risk_factor for each; do not omit):
+1. medical_history: Always include one factor. If no chronic conditions or significant history, use label "Medical history" with description "No significant medical history reported." and risk_level "low". Otherwise list conditions and risk level.
+2. pawscan_patterns: Always include one factor. If no recurring patterns (3+ similar in 60 days), use label "PawScan patterns" with description "No recurring PawScan issues in recent scans." and risk_level "low". Otherwise describe the recurring pattern and risk level.
+3. breed_specific: Always include 2-4 factors for "Risks to watch for" for this breed and species. Examples:
+   - Small dogs: diabetes, heart murmurs (especially small/toy breeds), dental disease, patella luxation, tracheal collapse.
+   - Large/giant dogs: hip/elbow dysplasia, bloat (GDV), heart disease, arthritis, certain cancers.
+   - Cats: kidney disease, hyperthyroidism, dental disease, heart (HCM), diabetes.
+   - Breed-specific: e.g. Cavalier King Charles (heart murmur/MVD), Golden Retriever (hip dysplasia, cancer, heart), Bulldog (respiratory, skin), German Shepherd (hip/spine), Dachshund (IVDD), etc.
+   Each factor should be a short "risk to watch" with why it matters for this pet's breed/species and a brief recommendation (monitoring, screening age, etc.). Use risk_level based on age and breed (e.g. low for young pet with no signs, medium for senior or high-risk breed).
 
 COMMUNICATION:
 - Write at 6th-8th grade reading level
 - Use simple, everyday words
 - Be empathetic but honest about risks
 - Never diagnose - identify risk factors and recommend vet consultation
+- Don't alarm pet owners unnecessarily - young healthy pets should feel reassured
 
 OUTPUT: Return strict JSON:
 {
