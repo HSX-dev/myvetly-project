@@ -20,7 +20,7 @@ export class NutritionAnalyzeRequestDto {
 // Diet & Goal Types
 // ============================================
 
-export type DietStyle = 'kibble' | 'canned' | 'raw' | 'home_cooked' | 'mixed';
+export type DietStyle = 'kibble' | 'canned' | 'raw' | 'home_cooked' | 'mixed' | 'pawla_decide';
 export type NutritionGoal = 'maintain' | 'weight_loss' | 'weight_gain' | 'not_sure';
 export type BudgetPreference = 'low' | 'medium' | 'high';
 export type TimeOfDay = 'morning' | 'afternoon' | 'evening' | 'night';
@@ -109,6 +109,7 @@ export interface NutritionPreferences {
   food_brand_recipe?: string;
   main_proteins?: string;
   main_carbs?: string;
+  diet_hint?: string;
   goal: NutritionGoal;
   allergies_intolerances?: string[];
   budget_preference?: BudgetPreference;

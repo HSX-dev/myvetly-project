@@ -712,13 +712,23 @@ IMPORTANT SCORING RULES:
 - Only add significant points for UNTREATED or CHRONIC issues
 
 RISK FACTOR CATEGORIES:
-- breed_specific: Genetic predispositions for this breed (hip dysplasia, heart disease, cancer risk, etc.)
+- breed_specific: Genetic predispositions and "risks to watch for" for this breed/species (see REQUIRED SECTIONS below)
 - age_related: Senior pet concerns, life stage considerations
-- medical_history: Chronic conditions, surgeries, ongoing treatments
+- medical_history: Chronic conditions, surgeries, ongoing treatments — ALWAYS include (use "No significant medical history" if none)
 - preventive_care: Overdue vaccines, missed preventive medications
-- pawscan_patterns: ONLY if showing recurring patterns (3+ similar issues)
+- pawscan_patterns: Recurring PawScan patterns OR "No recurring patterns" — ALWAYS include
 - weight: Obesity, underweight, significant changes
 - lifestyle: Activity concerns, diet issues
+
+REQUIRED SECTIONS (include at least one risk_factor for each; do not omit):
+1. medical_history: Always include one factor. If no chronic conditions or significant history, use label "Medical history" with description "No significant medical history reported." and risk_level "low". Otherwise list conditions and risk level.
+2. pawscan_patterns: Always include one factor. If no recurring patterns (3+ similar in 60 days), use label "PawScan patterns" with description "No recurring PawScan issues in recent scans." and risk_level "low". Otherwise describe the recurring pattern and risk level.
+3. breed_specific: Always include 2-4 factors for "Risks to watch for" for this breed and species. Examples:
+   - Small dogs: diabetes, heart murmurs (especially small/toy breeds), dental disease, patella luxation, tracheal collapse.
+   - Large/giant dogs: hip/elbow dysplasia, bloat (GDV), heart disease, arthritis, certain cancers.
+   - Cats: kidney disease, hyperthyroidism, dental disease, heart (HCM), diabetes.
+   - Breed-specific: e.g. Cavalier King Charles (heart murmur/MVD), Golden Retriever (hip dysplasia, cancer, heart), Bulldog (respiratory, skin), German Shepherd (hip/spine), Dachshund (IVDD), etc.
+   Each factor should be a short "risk to watch" with why it matters for this pet's breed/species and a brief recommendation (monitoring, screening age, etc.). Use risk_level based on age and breed (e.g. low for young pet with no signs, medium for senior or high-risk breed).
 
 COMMUNICATION:
 - Write at 6th-8th grade reading level

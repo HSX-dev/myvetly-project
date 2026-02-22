@@ -281,6 +281,12 @@ export class HealthhubService extends BaseAiService {
           breedSize: this.isLargeBreed(pet.breed) ? 'large' : 'small_medium',
           note: 'Age and breed predispositions should be the PRIMARY factor in risk scoring. Young healthy pets should have LOW scores.',
         },
+        breedSpeciesRisksToWatch: {
+          species: pet.species,
+          breed: pet.breed,
+          sizeCategory: this.isLargeBreed(pet.breed) ? 'large' : 'small_medium',
+          guidance: 'Always output 2-4 breed_specific risk_factors for "risks to watch for" for this breed/species. Small dogs: diabetes, heart murmurs, dental, patella. Large dogs: hip dysplasia, bloat, arthritis. Cats: kidney, thyroid, dental, heart (HCM). Add breed-specific items (e.g. Cavalier heart, Golden hip/cancer, Bulldog respiratory).',
+        },
         chronicConditions: {
           hasChronicConditions: chronicConditions.length > 0,
           conditions: chronicConditions.slice(0, 3).map((r) => ({
@@ -289,6 +295,12 @@ export class HealthhubService extends BaseAiService {
             date: r.created_at,
           })),
         },
+        medicalHistorySummary: chronicConditions.length > 0
+          ? `Reported: ${chronicConditions.slice(0, 3).map((r) => r.notes || r.record_type).join('; ').substring(0, 200)}`
+          : 'None reported. Always include a medical_history risk_factor stating "No significant medical history reported" with risk_level low.',
+        pawscanPatternsSummary: recurringIssues.length > 0
+          ? `Recurring (3+ in 60 days): ${recurringIssues.map((u) => u.issue).join('; ')}. One-time treated: ${oneTimeIssues.length}.`
+          : `No recurring patterns (${pawscanHistory.length} scan(s) in history). Always include a pawscan_patterns risk_factor stating "No recurring PawScan issues" with risk_level low.`,
         weight: {
           current: pet.weight,
           trend: weightTrend,
