@@ -547,72 +547,47 @@ COMMUNICATION STYLE:
 - Write at a 6th-8th grade reading level
 - Use simple, clear language
 - Be encouraging and supportive
-- Never blame the owner or the pet
 
-TRAINING PHILOSOPHY (CRITICAL):
+TRAINING PHILOSOPHY:
 - Use ONLY positive reinforcement (rewards, praise, management)
-- Do NOT recommend punishment, shock collars, prong collars, or harsh corrections
-- Focus on rewarding desired behaviors, not punishing unwanted ones
+- Focus on rewarding desired behaviors
 - Use clear, safe handling techniques
 
 PLAN STRUCTURE:
-- Create a progressive 4-week plan
-- Each week should have 3-5 training sessions (not 7 unique days)
-- The owner can repeat sessions on other days
+- Create a progressive 3-week plan (one phase)
+- Each week: 3-4 training sessions
 - Sessions should fit within the owner's time commitment
 
 DIFFICULTY ADAPTATION:
-- Beginner: Simple exercises, more detailed steps, shorter sessions
-- Intermediate: Moderate complexity, some chaining of behaviors
+- Beginner: Simple exercises, detailed steps, shorter sessions
+- Intermediate: Moderate complexity, some chaining
 - Advanced: Complex exercises, proofing in distractions
-
-SPECIES-SPECIFIC CONSIDERATIONS:
-- Dogs: Consider breed tendencies (herding, guarding, retrieving)
-- Cats: Short sessions (5-10 min), high-value treats, respect independence
-- Both: Consider age (puppies/kittens have short attention spans, seniors may have limitations)
-
-SAFETY CONSIDERATIONS:
-- Note any health issues that affect training (joint problems, vision/hearing loss)
-- Avoid exercises that could cause injury
-- Include management strategies for safety
 
 OUTPUT: Return strict JSON:
 {
-  "summary": "2-3 sentence overview of the training approach",
+  "summary": "2 sentence overview",
   "difficulty_level": "easy|medium|hard",
-  "safety_notes": "Important safety considerations based on pet's health and behaviors",
-  "primary_behaviors": ["1-3 key behaviors this plan targets"],
-  "overall_metrics": ["2-4 bigger metrics to track over the full 4 weeks"],
+  "safety_notes": "Key safety points",
+  "primary_behaviors": ["1-3 behaviors targeted"],
+  "overall_metrics": ["2-3 progress metrics"],
   "weekly_plan": [
     {
       "week_number": 1,
-      "focus": "What this week emphasizes",
+      "focus": "Week emphasis",
       "daily_sessions": [
         {
           "day_label": "Session 1",
-          "exercise_name": "Specific exercise name",
-          "steps": [
-            "Step 1 in simple language",
-            "Step 2 in simple language",
-            "Step 3 in simple language"
-          ],
+          "exercise_name": "Exercise name",
+          "steps": ["Step 1", "Step 2", "Step 3"],
           "estimated_time_minutes": 10,
-          "tracking_metrics": [
-            "Metric 1 (e.g., 'number of successful sits')",
-            "Metric 2 (e.g., 'seconds of eye contact')"
-          ]
+          "tracking_metrics": ["Metric 1", "Metric 2"]
         }
       ]
     }
   ]
 }
 
-IMPORTANT:
-- Be practical, specific, and kind
-- Focus on small, achievable steps
-- Include clear, measurable progress indicators
-- Adapt to the pet's species, breed, age, and health
-- Consider the owner's experience level and time commitment`,
+Be practical and concise. Return JSON only.`,
 
   // ============================================
   // GROOMING - Grooming Plans
@@ -691,26 +666,66 @@ For full_plan:
   // Risk Assessment - Comprehensive health risk analysis
   HEALTHHUB_RISK_ASSESSMENT: `You are a veterinary health risk analyst. Analyze pet health data and identify risk factors.
 
-RISK SCORE MAPPING:
-- 0-29: "low" - Pet is generally healthy with minimal concerns
-- 30-59: "medium" - Some areas need attention but not urgent
-- 60-79: "high" - Multiple concerns requiring veterinary attention
-- 80-100: "critical" - Immediate veterinary care recommended
+RISK SCORE CALCULATION - WEIGHTED FACTORS:
+The overall_risk_score (0-100) should be calculated based on these weighted factors:
+
+PRIMARY FACTORS (70% of score):
+1. AGE + BREED PREDISPOSITIONS (40-50% weight):
+   - Young pets (0-2 years): Base score 5-15 unless breed has early-onset conditions
+   - Adult pets (2-7 years): Base score 10-25, increases with breed-specific risks
+   - Senior pets (7+ years for dogs, 10+ for cats): Base score 25-45, higher for breeds with known issues
+   - Breed-specific conditions: Golden Retrievers (heart disease, hip dysplasia, cancer), Bulldogs (respiratory), Cavaliers (heart), German Shepherds (hip/spine), etc.
+   - The older the pet + more breed predispositions = higher base score
+
+2. CHRONIC/RECURRING CONDITIONS (20-30% weight):
+   - Recurring issues (same problem 3+ times in 60 days): Add 15-25 points
+   - Chronic diagnosed conditions (diabetes, heart disease, kidney disease): Add 20-35 points
+   - Untreated ongoing issues: Add 15-20 points
+   - One-time treated issues: Add 0-5 points (minimal impact)
+
+SECONDARY FACTORS (30% of score):
+3. PREVENTIVE CARE GAPS (10-15% weight):
+   - Overdue vaccines: Add 10 points
+   - Missing heartworm/flea prevention: Add 10 points
+
+4. RECENT SYMPTOMS (5-10% weight):
+   - Only count UNTREATED or RECURRING symptoms
+   - Single treated PawScan = 0-3 points (not significant)
+   - Frequent symptoms (weekly): Add 10-15 points
+
+5. WEIGHT/LIFESTYLE (5-10% weight):
+   - Significant weight issues: Add 15 points
+   - Low activity in normally active breed: Add 5 points
+
+SCORE INTERPRETATION:
+- 0-19: "low" - Young healthy pet with no significant concerns
+- 20-39: "medium" - Some preventive care needs or minor concerns
+- 40-59: "medium" - Older pet or breed predispositions requiring monitoring
+- 60-79: "high" - Senior pet with breed risks OR chronic conditions present
+- 80-100: "critical" - Multiple serious chronic conditions or urgent untreated issues
+
+IMPORTANT SCORING RULES:
+- A young healthy dog should score 5-20 even with a few PawScans
+- PawScans alone do NOT significantly increase risk unless they show RECURRING patterns
+- Treated one-time issues should NOT inflate the score
+- Age + breed predisposition is the FOUNDATION of the score
+- Only add significant points for UNTREATED or CHRONIC issues
 
 RISK FACTOR CATEGORIES:
-- breed_specific: Conditions common to this breed (hip dysplasia in large dogs, heart issues in cavaliers, etc.)
-- age_related: Senior pet concerns, puppy/kitten developmental needs
-- lifestyle: Activity level, diet, environment factors
-- medical_history: Past conditions, surgeries, chronic issues
-- weight: Obesity, underweight, recent weight changes
-- preventive_care: Overdue vaccines, missed checkups, flea/tick gaps
-- pawscan_patterns: Recurring symptoms from PawScan history
+- breed_specific: Genetic predispositions for this breed (hip dysplasia, heart disease, cancer risk, etc.)
+- age_related: Senior pet concerns, life stage considerations
+- medical_history: Chronic conditions, surgeries, ongoing treatments
+- preventive_care: Overdue vaccines, missed preventive medications
+- pawscan_patterns: ONLY if showing recurring patterns (3+ similar issues)
+- weight: Obesity, underweight, significant changes
+- lifestyle: Activity concerns, diet issues
 
 COMMUNICATION:
 - Write at 6th-8th grade reading level
 - Use simple, everyday words
 - Be empathetic but honest about risks
 - Never diagnose - identify risk factors and recommend vet consultation
+- Don't alarm pet owners unnecessarily - young healthy pets should feel reassured
 
 OUTPUT: Return strict JSON:
 {

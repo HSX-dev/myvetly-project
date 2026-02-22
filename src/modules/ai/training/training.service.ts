@@ -36,10 +36,20 @@ export class TrainingService extends BaseAiService {
       RATE_LIMITS.TRAINING.windowSeconds,
     );
 
-    // Fetch pet and preferences in parallel
-    const [petResult, prefs] = await Promise.all([
+    const phaseNumber = dto.phase_number || 1;
+    const weekOffset = (phaseNumber - 1) * 3;
+
+    // Fetch pet, preferences, and previous plan (if continuation) in parallel
+    const [petResult, prefs, previousPlan] = await Promise.all([
       this.getSupabase().from('pets').select('*').eq('id', dto.pet_id).single(),
       this.supabaseService.getTrainingPreferences(dto.preference_id),
+      dto.previous_plan_id
+        ? this.getSupabase()
+            .from('pet_training_plans')
+            .select('plan_data')
+            .eq('id', dto.previous_plan_id)
+            .single()
+        : Promise.resolve({ data: null }),
     ]);
 
     if (petResult.error || !petResult.data) {
@@ -48,8 +58,10 @@ export class TrainingService extends BaseAiService {
 
     const pet = petResult.data;
 
-    // Build comprehensive user prompt
-    const userPrompt = this.buildUserPrompt(pet, prefs);
+    // Build user prompt (continuation or new)
+    const userPrompt = previousPlan.data
+      ? this.buildContinuationPrompt(pet, prefs, previousPlan.data.plan_data, phaseNumber)
+      : this.buildUserPrompt(pet, prefs);
 
     // Call AI (use DeepSeek for cost efficiency, fallback to OpenAI)
     let response;
@@ -57,14 +69,14 @@ export class TrainingService extends BaseAiService {
     try {
       response = await this.callDeepSeek(AI_PROMPTS.TRAINING_SYSTEM, userPrompt, {
         temperature: 0.7,
-        maxTokens: 2500,
+        maxTokens: 1800,
       });
     } catch (error) {
       // Fallback to OpenAI if DeepSeek fails
       this.logger.warn('DeepSeek failed, falling back to OpenAI');
       response = await this.callOpenAI(AI_PROMPTS.TRAINING_SYSTEM, userPrompt, {
         temperature: 0.7,
-        maxTokens: 2500,
+        maxTokens: 1800,
       });
       modelUsed = 'gpt-4o-mini';
     }
@@ -74,6 +86,11 @@ export class TrainingService extends BaseAiService {
 
     // Validate response structure
     this.validateTrainingPlan(result);
+
+    // Add phase metadata
+    result.phase_number = phaseNumber;
+    result.previous_plan_id = dto.previous_plan_id;
+    result.week_offset = weekOffset;
 
     // Calculate cost
     const cost = this.calculateCost(response.tokensUsed, modelUsed);
@@ -137,91 +154,71 @@ export class TrainingService extends BaseAiService {
   }
 
   /**
-   * Build comprehensive user prompt with all pet data
+   * Build user prompt for initial 3-week plan
    */
   private buildUserPrompt(pet: any, prefs: TrainingPreferences): string {
     const age = pet.birth_date ? this.calculateAge(pet.birth_date) : 'Unknown';
-
-    // Get experience level description
     const experienceDesc =
       EXPERIENCE_LEVEL_MAP[prefs.experience_level] || prefs.experience_level || 'Not specified';
-
-    // Format behavior issues
     const behaviorIssues =
       Array.isArray(prefs.behavior_issues) && prefs.behavior_issues.length > 0
         ? prefs.behavior_issues.join(', ')
         : 'Not specified';
-
-    // Format training goals
     const trainingGoals =
       Array.isArray(prefs.training_goals) && prefs.training_goals.length > 0
         ? prefs.training_goals.join(', ')
         : 'Not specified';
 
-    return `TRAINING PLAN REQUEST
+    return `PET: ${pet.name}, ${pet.species || 'Unknown'} (${pet.breed || 'Unknown'}), Age: ${age}, Weight: ${pet.weight || 'Unknown'} lbs
 
-PET PROFILE:
-- Name: ${pet.name}
-- Species: ${pet.species || 'Unknown'}
-- Breed: ${pet.breed || 'Unknown'}
-- Age: ${age}
-- Sex: ${pet.gender || pet.sex || 'Unknown'}
-- Weight: ${pet.weight || 'Unknown'} lbs
-- Medical History: ${pet.medical_history || 'None recorded'}
+GOALS: ${trainingGoals}
+ISSUES: ${behaviorIssues}
+EXPERIENCE: ${experienceDesc}
+TIME: ${prefs.time_commitment_minutes || 15} min/day
+${prefs.specific_behaviors ? `SPECIFIC: ${prefs.specific_behaviors}` : ''}
 
-OWNER PREFERENCES:
-- Behavior Issues: ${behaviorIssues}
-- Training Goals: ${trainingGoals}
-- Experience Level: ${experienceDesc}
-- Time Commitment: ${prefs.time_commitment_minutes ? `${prefs.time_commitment_minutes} minutes per day` : 'Not specified'}
-- Specific Behaviors to Address: ${prefs.specific_behaviors || 'Not specified'}
+Create a 3-week training plan (Phase 1, Weeks 1-3):
+- 3-4 sessions per week
+- Focus on 1-3 primary behaviors
+- Adapt to ${prefs.experience_level || 'beginner'} level
+- Use positive reinforcement only
 
-TASK:
+Return JSON with: summary, difficulty_level, safety_notes, primary_behaviors, overall_metrics, weekly_plan (3 weeks, week_number 1-3).`;
+  }
 
-1. From the behavior issues and goals, choose 1-3 primary behaviors to focus on
-   (for example: leash pulling, barking at strangers, separation anxiety).
+  /**
+   * Build continuation prompt for next phase
+   */
+  private buildContinuationPrompt(
+    pet: any,
+    prefs: TrainingPreferences,
+    previousPlan: TrainingPlanResult,
+    phaseNumber: number,
+  ): string {
+    const age = pet.birth_date ? this.calculateAge(pet.birth_date) : 'Unknown';
+    const startWeek = (phaseNumber - 1) * 3 + 1;
+    const endWeek = phaseNumber * 3;
 
-2. Create a progressive 4-week plan. Each week should have 3-5 training sessions,
-   not 7 unique days. The owner can repeat sessions on other days.
+    const previousSummary = previousPlan.weekly_plan
+      .map((w) => `Week ${w.week_number}: ${w.focus}`)
+      .join('; ');
 
-3. Adapt the difficulty to:
-   - the pet's species, breed, age, and health
-   - the owner's experience level (${prefs.experience_level || 'beginner'})
-   - the available time (${prefs.time_commitment_minutes || 15} minutes per day)
+    return `PET: ${pet.name}, ${pet.species || 'Unknown'} (${pet.breed || 'Unknown'}), Age: ${age}
 
-4. Use only positive reinforcement (rewards, praise, management) and clear, safe handling.
+CONTINUATION - Phase ${phaseNumber} (Weeks ${startWeek}-${endWeek})
 
-PLAN CONTENT:
+PREVIOUS PHASE COVERED:
+${previousSummary}
 
-1. summary (2-3 sentences):
-   - Simple overview of the approach and what the plan will help improve.
+Primary behaviors worked on: ${previousPlan.primary_behaviors.join(', ')}
 
-2. difficulty_level:
-   - "easy", "medium", or "hard" based on behavior complexity and owner experience.
+Create the NEXT 3-week phase that builds on previous progress:
+- Weeks ${startWeek}-${endWeek} (use week_number ${startWeek}, ${startWeek + 1}, ${startWeek + 2})
+- 3-4 sessions per week
+- Progress difficulty appropriately
+- Build on skills from previous phase
+- Continue positive reinforcement
 
-3. safety_notes:
-   - Important safety points related to the behaviors and any health issues.
-
-4. weekly_plan:
-   - Include 4 items only (week_number 1-4).
-   - For each week:
-     - week_number: 1, 2, 3, or 4
-     - focus: short sentence about what this week emphasizes
-     - daily_sessions: an array of 3-5 sessions. Each session has:
-       - day_label: "Session 1", "Session 2", etc. (not calendar days)
-       - exercise_name: clear, specific name
-       - steps: 3-7 short, ordered steps in simple language
-       - estimated_time_minutes: realistic time based on the owner's time commitment
-       - tracking_metrics: 1-3 simple, measurable metrics
-
-5. primary_behaviors:
-   - List of the 1-3 key behaviors this plan targets, in everyday language.
-
-6. overall_metrics:
-   - 2-4 bigger metrics the owner can track over the full 4 weeks.
-
-Be practical, specific, and kind. Never blame the owner or the pet. Focus on small, achievable steps and clear, measurable progress.
-
-Return JSON only.`;
+Return JSON with: summary, difficulty_level, safety_notes, primary_behaviors, overall_metrics, weekly_plan (3 weeks).`;
   }
 }

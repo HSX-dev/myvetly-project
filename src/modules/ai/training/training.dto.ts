@@ -1,4 +1,4 @@
-import { IsString, IsOptional } from 'class-validator';
+import { IsString, IsOptional, IsNumber } from 'class-validator';
 
 // ============================================
 // Request Types
@@ -14,6 +14,14 @@ export class TrainingAnalyzeRequestDto {
   @IsOptional()
   @IsString()
   user_id?: string;
+
+  @IsOptional()
+  @IsString()
+  previous_plan_id?: string;
+
+  @IsOptional()
+  @IsNumber()
+  phase_number?: number;
 }
 
 // ============================================
@@ -36,7 +44,7 @@ export interface DailySession {
 }
 
 export interface WeeklyPlan {
-  week_number: number; // 1-4
+  week_number: number; // 1-3 per phase
   focus: string;
   daily_sessions: DailySession[];
 }
@@ -52,6 +60,9 @@ export interface TrainingPlanResult {
   primary_behaviors: string[];
   overall_metrics: string[];
   weekly_plan: WeeklyPlan[];
+  phase_number?: number;
+  previous_plan_id?: string;
+  week_offset?: number;
 }
 
 // ============================================

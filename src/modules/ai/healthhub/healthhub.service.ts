@@ -166,27 +166,79 @@ export class HealthhubService extends BaseAiService {
     preventiveCareGaps: any,
   ): string {
     const age = pet.birth_date ? this.calculateAge(pet.birth_date) : 'Unknown';
+    const ageInYears = pet.birth_date ? this.calculateAgeInYears(pet.birth_date) : null;
 
-    // Analyze PawScan patterns
-    const highSeverityScans = pawscanHistory.filter(
-      (s) => s.severity_label === 'high' || s.severity_label === 'critical',
-    );
-    const avgSeverity =
-      pawscanHistory.length > 0
-        ? pawscanHistory.reduce((sum, s) => sum + (s.severity_score || 0), 0) /
-          pawscanHistory.length
-        : 0;
+    // Determine life stage
+    let lifeStage = 'adult';
+    if (ageInYears !== null) {
+      if (pet.species === 'cat') {
+        if (ageInYears < 1) lifeStage = 'kitten';
+        else if (ageInYears < 7) lifeStage = 'adult';
+        else if (ageInYears < 11) lifeStage = 'mature';
+        else lifeStage = 'senior';
+      } else {
+        // Dogs - size matters for senior threshold
+        const isLargeBreed = this.isLargeBreed(pet.breed);
+        if (ageInYears < 1) lifeStage = 'puppy';
+        else if (ageInYears < 2) lifeStage = 'young_adult';
+        else if (isLargeBreed && ageInYears >= 6) lifeStage = 'senior';
+        else if (!isLargeBreed && ageInYears >= 8) lifeStage = 'senior';
+        else if (ageInYears >= 5) lifeStage = 'mature';
+        else lifeStage = 'adult';
+      }
+    }
+
+    // Analyze PawScan patterns - focus on RECURRING issues
+    const diagnosisCounts: Record<string, { count: number; dates: string[]; treated: boolean }> = {};
+    const sixtyDaysAgo = new Date();
+    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+
+    pawscanHistory.forEach((s) => {
+      if (s.diagnosis) {
+        const key = s.diagnosis.toLowerCase().substring(0, 50);
+        if (!diagnosisCounts[key]) {
+          diagnosisCounts[key] = { count: 0, dates: [], treated: false };
+        }
+        diagnosisCounts[key].count++;
+        diagnosisCounts[key].dates.push(s.created_at);
+        // Check if treated (has recommendations or follow-up)
+        if (s.recommendations || s.treatment_guide) {
+          diagnosisCounts[key].treated = true;
+        }
+      }
+    });
+
+    // Identify recurring issues (3+ occurrences in 60 days)
+    const recurringIssues = Object.entries(diagnosisCounts)
+      .filter(([, data]) => {
+        const recentOccurrences = data.dates.filter(d => new Date(d) >= sixtyDaysAgo).length;
+        return recentOccurrences >= 3;
+      })
+      .map(([issue, data]) => ({
+        issue,
+        occurrences: data.count,
+        treated: data.treated,
+        frequency: data.count >= 4 ? 'frequent' : 'recurring',
+      }));
+
+    // One-time issues (treated and not recurring)
+    const oneTimeIssues = Object.entries(diagnosisCounts)
+      .filter(([, data]) => data.count === 1 && data.treated)
+      .map(([issue]) => issue);
 
     // Analyze weight trend
     const weightLogs = vitalHistory.weightLogs || [];
     let weightTrend = 'stable';
+    let weightChangePercent = 0;
     if (weightLogs.length >= 2) {
       const latest = weightLogs[0]?.weight || 0;
       const oldest = weightLogs[weightLogs.length - 1]?.weight || 0;
       if (oldest > 0) {
-        const change = ((latest - oldest) / oldest) * 100;
-        if (change > 5) weightTrend = `gaining (+${change.toFixed(1)}%)`;
-        else if (change < -5) weightTrend = `losing (${change.toFixed(1)}%)`;
+        weightChangePercent = ((latest - oldest) / oldest) * 100;
+        if (weightChangePercent > 10) weightTrend = 'significant_gain';
+        else if (weightChangePercent > 5) weightTrend = 'gaining';
+        else if (weightChangePercent < -10) weightTrend = 'significant_loss';
+        else if (weightChangePercent < -5) weightTrend = 'losing';
       }
     }
 
@@ -198,6 +250,17 @@ export class HealthhubService extends BaseAiService {
           activityLogs.length
         : null;
 
+    // Check for chronic conditions in medical records
+    const chronicConditions = records.filter((r) => 
+      r.record_type === 'diagnosis' || 
+      r.notes?.toLowerCase().includes('chronic') ||
+      r.notes?.toLowerCase().includes('ongoing') ||
+      r.notes?.toLowerCase().includes('diabetes') ||
+      r.notes?.toLowerCase().includes('heart disease') ||
+      r.notes?.toLowerCase().includes('kidney') ||
+      r.notes?.toLowerCase().includes('arthritis')
+    );
+
     return JSON.stringify(
       {
         petProfile: {
@@ -205,13 +268,31 @@ export class HealthhubService extends BaseAiService {
           species: pet.species,
           breed: pet.breed,
           age,
+          ageInYears,
+          lifeStage,
           sex: pet.sex,
           weight: pet.weight,
           allergies: pet.allergies || 'None',
+          medicalConditions: pet.medical_conditions || 'None reported',
+        },
+        ageAndBreedContext: {
+          lifeStage,
+          ageInYears,
+          breedSize: this.isLargeBreed(pet.breed) ? 'large' : 'small_medium',
+          note: 'Age and breed predispositions should be the PRIMARY factor in risk scoring. Young healthy pets should have LOW scores.',
+        },
+        chronicConditions: {
+          hasChronicConditions: chronicConditions.length > 0,
+          conditions: chronicConditions.slice(0, 3).map((r) => ({
+            type: r.record_type,
+            notes: r.notes?.substring(0, 100),
+            date: r.created_at,
+          })),
         },
         weight: {
           current: pet.weight,
           trend: weightTrend,
+          changePercent: weightChangePercent.toFixed(1),
           logsCount: weightLogs.length,
         },
         activity: {
@@ -222,34 +303,48 @@ export class HealthhubService extends BaseAiService {
           overdueCount: vaccineStatus.overdue?.length || 0,
           dueSoonCount: vaccineStatus.dueSoon?.length || 0,
           overdueItems: vaccineStatus.overdue?.map((v: any) => v.vaccine_name) || [],
-          dueSoonItems: vaccineStatus.dueSoon?.map((v: any) => v.vaccine_name) || [],
         },
-        medicalRecords: {
-          totalCount: records.length,
-          recentRecords: records.slice(0, 5).map((r) => ({
-            type: r.record_type,
-            date: r.created_at,
-            notes: r.notes?.substring(0, 100),
-          })),
-        },
-        pawscan: {
+        pawscanAnalysis: {
           totalScans: pawscanHistory.length,
-          highOrCriticalCount: highSeverityScans.length,
-          avgSeverity: avgSeverity.toFixed(2),
-          recentIssues: pawscanHistory.slice(0, 3).map((s) => ({
-            severity: s.severity_label,
-            diagnosis: s.diagnosis?.substring(0, 100),
-            date: s.created_at,
-          })),
+          recurringIssues,
+          oneTimeIssuesTreated: oneTimeIssues.length,
+          note: 'One-time treated issues should NOT significantly impact risk score. Only RECURRING patterns matter.',
         },
         preventiveCareGaps: {
           heartworm: preventiveCareGaps.heartworm,
           fleaTick: preventiveCareGaps.fleaTick,
         },
+        scoringGuidance: {
+          youngHealthyPet: 'If pet is young (under 3 years) with no chronic conditions or recurring issues, score should be 10-25 max.',
+          seniorPet: 'Senior pets naturally have higher base scores (30-50) due to age-related risks.',
+          breedRisks: 'Add points for known breed predispositions that become more relevant with age.',
+          pawscansNote: 'PawScans alone do NOT indicate high risk. Only recurring untreated patterns add significant points.',
+        },
       },
       null,
       2,
     );
+  }
+
+  private calculateAgeInYears(birthDate: string): number {
+    const birth = new Date(birthDate);
+    const now = new Date();
+    const years = (now.getTime() - birth.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
+    return Math.round(years * 10) / 10; // One decimal place
+  }
+
+  private isLargeBreed(breed: string): boolean {
+    if (!breed) return false;
+    const largeBreeds = [
+      'german shepherd', 'golden retriever', 'labrador', 'rottweiler', 
+      'great dane', 'mastiff', 'saint bernard', 'bernese', 'newfoundland',
+      'irish wolfhound', 'great pyrenees', 'doberman', 'boxer', 'husky',
+      'malamute', 'akita', 'weimaraner', 'rhodesian', 'cane corso',
+      'bullmastiff', 'leonberger', 'irish setter', 'gordon setter',
+      'belgian malinois', 'belgian shepherd', 'collie', 'old english sheepdog'
+    ];
+    const breedLower = breed.toLowerCase();
+    return largeBreeds.some(lb => breedLower.includes(lb));
   }
 
   // ============================================
