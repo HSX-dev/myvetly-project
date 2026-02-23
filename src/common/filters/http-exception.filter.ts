@@ -30,7 +30,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         const resp = exceptionResponse as any;
         message = resp.message || exception.message;
         error = resp.error || 'Error';
-        details = resp.details;
+        details = resp.details ?? resp.errors;
       } else {
         message = exceptionResponse as string;
       }
@@ -44,14 +44,16 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       );
     }
 
-    const errorResponse = {
+    const errorResponse: Record<string, unknown> = {
       statusCode: status,
       error,
       message,
-      ...(details && { details }),
       timestamp: new Date().toISOString(),
       path: request.url,
     };
+    if (details !== undefined) {
+      errorResponse.errors = details;
+    }
 
     // Log all errors in development
     if (process.env.NODE_ENV === 'development') {
