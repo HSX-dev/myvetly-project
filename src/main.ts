@@ -1,6 +1,6 @@
 
 import { NestFactory, Reflector } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
 import { ExcludeInterceptor } from './utils/interceptors/exclude.interceptor';
@@ -49,7 +49,7 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // Enable validation
+  // Enable validation - always return field-level error messages so frontend can show what to fix
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -57,9 +57,24 @@ async function bootstrap() {
       transformOptions: {
         excludeExtraneousValues: false, // Default: expose all properties unless @Exclude() is used
       },
-      // Show detailed error messages in development, generic in production
-      disableErrorMessages: isProduction,
+      disableErrorMessages: false, // Always include validation messages for frontend
       forbidNonWhitelisted: isProduction, // Strict validation in production
+      exceptionFactory: (errors) => {
+        // Format validation errors as { field, messages } for frontend to display
+        const formatted = errors.map((err) => {
+          const field = err.property;
+          const messages = err.constraints
+            ? Object.values(err.constraints)
+            : err.children
+              ? ['Invalid value']
+              : ['Validation failed'];
+          return { field, messages };
+        });
+        return new BadRequestException({
+          message: 'Validation failed. Please fix the highlighted fields.',
+          errors: formatted,
+        });
+      },
     }),
   );
 
