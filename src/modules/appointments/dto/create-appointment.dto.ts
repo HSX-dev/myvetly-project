@@ -62,6 +62,12 @@ export class CreateAppointmentDto {
   @IsOptional()
   organization_id?: string;
 
+  /** @deprecated Ignored for security - tenant_id is derived server-side from clinic_id. Allowed only for backward compatibility when frontend sends it. */
+  @Expose()
+  @IsUUID()
+  @IsOptional()
+  tenant_id?: string;
+
   @Expose()
   @IsDateString()
   @Validate(IsFutureDateConstraint)
