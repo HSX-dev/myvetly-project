@@ -413,7 +413,7 @@ export class AppointmentsService {
       });
 
       const { data, error } = await this.supabaseService
-        .getClient()
+        .getWriteClient(user.access_token)
         .from('appointments')
         .insert([insertData])
         .select(`
@@ -615,7 +615,7 @@ export class AppointmentsService {
       });
 
       const { data, error } = await this.supabaseService
-        .getClient()
+        .getWriteClient(user.access_token)
         .from('appointments')
         .update(updateData)
         .eq('id', id)
@@ -757,7 +757,7 @@ export class AppointmentsService {
     }
 
     const { data, error } = await this.supabaseService
-      .getClient()
+      .getWriteClient(user.access_token)
       .from('appointments')
       .update(updateData)
       .eq('id', id)
