@@ -97,7 +97,7 @@ export class ClinicsService {
     }
 
     const { data, error } = await this.supabaseService
-      .getClient()
+      .getWriteClient(user?.access_token)
       .from('clinics')
       .update(updateData)
       .eq('id', id)
@@ -331,7 +331,7 @@ export class ClinicsService {
     }
 
     const { data, error } = await this.supabaseService
-      .getClient()
+      .getWriteClient(user.access_token)
       .from('clinic_services')
       .insert({
         ...createDto,
@@ -361,7 +361,7 @@ export class ClinicsService {
     }
 
     const { data, error } = await this.supabaseService
-      .getClient()
+      .getWriteClient(user.access_token)
       .from('clinic_services')
       .update(updateDto)
       .eq('id', serviceId)
