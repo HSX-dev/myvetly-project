@@ -211,7 +211,7 @@ export class InvoicesService {
     if (!appointmentId) throw new BadRequestException('Missing appointmentId!');
 
     const { data, error } = await this.supabaseService
-      .getClient()
+      .getWriteClient(user.access_token)
       .from('invoices')
       .insert({
         ...createInvoiceDto,
@@ -274,7 +274,7 @@ export class InvoicesService {
     if (!user) throw new BadRequestException('Missing User Data!');
 
     const { data, error } = await this.supabaseService
-      .getClient()
+      .getWriteClient(user.access_token)
       .from('invoices')
       .update(updateInvoiceDto)
       .eq('id', invoiceId)
@@ -299,7 +299,7 @@ export class InvoicesService {
     if (!user) throw new BadRequestException('Missing User Data!');
 
     const query = this.supabaseService
-      .getClient()
+      .getWriteClient(user.access_token)
       .from('invoices')
       .update(updateInvoiceDto)
       .eq('id', invoiceId)
@@ -434,7 +434,7 @@ export class InvoicesService {
     }));
 
     const { data, error } = await this.supabaseService
-      .getClient()
+      .getWriteClient(user.access_token)
       .from('invoice_items')
       .insert(itemsToInsert)
       .select('*');
@@ -484,7 +484,7 @@ export class InvoicesService {
     if (!user) throw new BadRequestException('Missing User Data!');
 
     const { data, error } = await this.supabaseService
-      .getClient()
+      .getWriteClient(user.access_token)
       .from('invoice_items')
       .update(updateInvoiceItemDto)
       .eq('id', itemId)

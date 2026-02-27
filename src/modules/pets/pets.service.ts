@@ -278,7 +278,7 @@ export class PetsService {
     }
 
     const { data, error } = await this.supabaseService
-      .getClient()
+      .getWriteClient(user.access_token)
       .from('pets')
       .insert(createPetDto)
       .select()
@@ -300,7 +300,7 @@ export class PetsService {
     // If needed, it should be a separate admin endpoint
 
     const { data, error } = await this.supabaseService
-      .getClient()
+      .getWriteClient(user.access_token)
       .from('pets')
       .update(updatePetDto)
       .eq('id', id)
@@ -316,7 +316,7 @@ export class PetsService {
     await this.validatePetAccess(user, id);
 
     const { error } = await this.supabaseService
-      .getClient()
+      .getWriteClient(user.access_token)
       .from('pets')
       .delete()
       .eq('id', id);

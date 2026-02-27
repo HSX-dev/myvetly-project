@@ -504,7 +504,7 @@ export class UsersService {
       // Update the record if there are changes
       if (Object.keys(needsUpdate).length > 0) {
         const { data: updatedRecord, error: updateError } = await this.supabaseService
-          .getClient()
+          .getWriteClient(user.access_token)
           .from('users')
           .update(needsUpdate)
           .eq('id', existingUserRecord.id)
@@ -565,7 +565,7 @@ export class UsersService {
     };
 
     const { data, error } = await this.supabaseService
-      .getClient()
+      .getWriteClient(user.access_token)
       .from('users')
       .insert(finalUserRecordData)
       .select(`
@@ -710,7 +710,7 @@ export class UsersService {
 
     // Update user record (without phone)
     const { data, error } = await this.supabaseService
-      .getClient()
+      .getWriteClient(user.access_token)
       .from('users')
       .update(updateData)
       .eq('id', id)
@@ -744,7 +744,7 @@ export class UsersService {
     // If phone was provided, update it in the clients table (if user is a client)
     if (phoneToUpdate !== undefined) {
       const { error: clientUpdateError } = await this.supabaseService
-        .getClient()
+        .getWriteClient(user.access_token)
         .from('clients')
         .update({ phone: phoneToUpdate })
         .eq('user_id', id);
@@ -878,7 +878,7 @@ export class UsersService {
 
     // Soft delete by setting status to 'deleted'
     const { data, error } = await this.supabaseService
-      .getClient()
+      .getWriteClient(user.access_token)
       .from('users')
       .update({ status: 'deleted' })
       .eq('id', id)
@@ -920,7 +920,7 @@ export class UsersService {
 
     // Restore by setting status to 'active' and clearing deleted fields
     const { data, error } = await this.supabaseService
-      .getClient()
+      .getWriteClient(user.access_token)
       .from('users')
       .update({ 
         status: 'active',
@@ -972,7 +972,7 @@ export class UsersService {
 
     // Hard delete - permanently remove from database
     const { error } = await this.supabaseService
-      .getClient()
+      .getWriteClient(user.access_token)
       .from('users')
       .delete()
       .eq('id', id);
@@ -1107,7 +1107,7 @@ export class UsersService {
 
     // Delete all existing licensed states for the user
     const { error: deleteError } = await this.supabaseService
-      .getClient()
+      .getWriteClient(user.access_token)
       .from('user_licensed_states')
       .delete()
       .eq('user_id', userId);
@@ -1124,7 +1124,7 @@ export class UsersService {
       }));
 
       const { error: insertError } = await this.supabaseService
-        .getClient()
+        .getWriteClient(user.access_token)
         .from('user_licensed_states')
         .insert(newStates);
 
@@ -1428,7 +1428,7 @@ export class UsersService {
     const targetUser = await this.findOne(userId, user);
 
     const { data, error } = await this.supabaseService
-      .getClient()
+      .getWriteClient(user.access_token)
       .from('user_schedules')
       .insert({
         ...scheduleData,
@@ -1467,7 +1467,7 @@ export class UsersService {
     await this.findOne(schedule.user_id, user);
 
     const { data, error } = await this.supabaseService
-      .getClient()
+      .getWriteClient(user.access_token)
       .from('user_schedules')
       .update(scheduleData)
       .eq('id', scheduleId)

@@ -301,7 +301,7 @@ export class ClientsService {
       };
 
       const { data: newUser, error: userError } = await this.supabaseService
-        .getClient()
+        .getWriteClient(user.access_token)
         .from('users')
         .insert(userData)
         .select('id')
@@ -389,7 +389,7 @@ export class ClientsService {
 
     // Step 3: Create the client
     const { data, error } = await this.supabaseService
-      .getClient()
+      .getWriteClient(user.access_token)
       .from('clients')
       .insert(fieldsToInsert)
       .select(`
@@ -472,7 +472,7 @@ export class ClientsService {
 
       // Update the clients table
       const { data: updatedClientData, error: clientError } = await this.supabaseService
-        .getClient()
+        .getWriteClient(user.access_token)
         .from('clients')
         .update(fieldsToUpdate)
         .eq('id', id)
@@ -497,7 +497,7 @@ export class ClientsService {
         if (email) userUpdates.email = email;
 
         const { error: userError } = await this.supabaseService
-          .getClient()
+          .getWriteClient(user.access_token)
           .from('users')
           .update(userUpdates)
           .eq('id', currentClient.user_id);
@@ -569,7 +569,7 @@ export class ClientsService {
     // Perform soft delete instead of hard delete
     // Use user.user_id (users table ID) instead of user.id (auth_user_id)
     const { error } = await this.supabaseService
-      .getClient()
+      .getWriteClient(user.access_token)
       .from('clients')
       .update({
         status: 'deleted',
@@ -609,7 +609,7 @@ export class ClientsService {
 
     // Restore by setting status to 'active' and clearing deleted fields
     const { data, error } = await this.supabaseService
-      .getClient()
+      .getWriteClient(user.access_token)
       .from('clients')
       .update({
         status: 'active',
@@ -656,7 +656,7 @@ export class ClientsService {
 
     // Hard delete - permanently remove from database
     const { error } = await this.supabaseService
-      .getClient()
+      .getWriteClient(user.access_token)
       .from('clients')
       .delete()
       .eq('id', id);
@@ -779,7 +779,7 @@ export class ClientsService {
     }
 
     const { data, error } = await this.supabaseService
-      .getClient()
+      .getWriteClient(user.access_token)
       .from('client_notes')
       .insert({
         client_id: createNoteDto.client_id,

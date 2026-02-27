@@ -112,6 +112,50 @@ export class SupabaseService {
     return this.supabase;
   }
 
+  /**
+   * Get a Supabase client authenticated as a specific user.
+   * This makes auth.uid() return the user's ID in database triggers,
+   * which is critical for audit trail tracking (performed_by field).
+   * 
+   * Uses the user's access token from the original request so that
+   * Supabase's auth context is correctly set server-side.
+   */
+  getAuthenticatedClient(accessToken: string): SupabaseClient {
+    const url = this.configService.get<string>('supabase.url')!;
+    const serviceKey = this.configService.get<string>('supabase.serviceKey')!;
+
+    const client = createClient(url, serviceKey, {
+      global: {
+        fetch: createCustomFetch(),
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      },
+      db: {
+        schema: 'public',
+      },
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+
+    return client;
+  }
+
+  /**
+   * Get a Supabase client suitable for write operations that need audit tracking.
+   * If a user access token is provided, returns an authenticated client so that
+   * auth.uid() works in database triggers (populating performed_by in audit_logs).
+   * Falls back to the service role client if no token is available.
+   */
+  getWriteClient(accessToken?: string): SupabaseClient {
+    if (accessToken) {
+      return this.getAuthenticatedClient(accessToken);
+    }
+    return this.supabase;
+  }
+
   // Helper method to get pet data with context
   async getPetContext(petId: string) {
     const { data: pet, error } = await this.supabase

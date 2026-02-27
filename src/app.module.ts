@@ -36,6 +36,7 @@ import { ZoomModule } from './modules/zoom/zoom.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { GoogleModule } from './modules/google/google.module';
 import { SearchModule } from './modules/search/search.module';
+import { AuditModule } from './modules/audit/audit.module';
 import configuration from './config/configuration';
 
 @Module({
@@ -86,6 +87,7 @@ import configuration from './config/configuration';
     PaymentsModule,
     GoogleModule,
     SearchModule,
+    AuditModule,
   ],
   controllers: [AppController],
   providers: [
