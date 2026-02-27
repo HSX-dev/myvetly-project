@@ -760,61 +760,91 @@ export class UsersService {
 
   /**
    * Update user password via Supabase Auth Admin API
-   * This replaces the Edge Function approach
+   * If the user has no auth account (missing auth_user_id or "User not found"),
+   * creates the auth user with the given password and links it to the users row.
    */
   async updatePassword(id: string, newPassword: string, user: UserContext) {
     console.log('🔐 updatePassword called:', { userId: id, currentUser: user.id, role: user.role });
 
-    // First, get the target user to validate access and get auth_user_id
-    let targetUser;
+    let targetUser: any;
     try {
       targetUser = await this.findOne(id, user);
       console.log('✅ Target user found:', { id: targetUser.id, auth_user_id: targetUser.auth_user_id });
     } catch (error) {
       console.error('❌ Failed to find target user:', error);
-      throw error; // Re-throw to preserve the original error (RLS/not found)
+      throw error;
     }
 
-    if (!targetUser.auth_user_id) {
-      console.error('❌ User record exists but auth_user_id is missing:', { userId: id });
-      throw new NotFoundException('User auth_user_id not found - user may not have an auth account');
+    if (!targetUser.email) {
+      throw new BadRequestException('User record has no email - cannot create or update auth account');
     }
 
-    // Validate password length
     if (newPassword.length < 8) {
-      throw new InternalServerErrorException('Password must be at least 8 characters long');
+      throw new BadRequestException('Password must be at least 8 characters long');
     }
 
-    // Update password via Supabase Auth Admin API
-    console.log('🔄 Updating password via Supabase Auth Admin API...');
-    const { data, error } = await this.supabaseService
-      .getClient()
-      .auth.admin.updateUserById(targetUser.auth_user_id, {
+    const client = this.supabaseService.getClient();
+    let authUserId = targetUser.auth_user_id;
+
+    const tryUpdatePassword = async (): Promise<boolean> => {
+      if (!authUserId) return false;
+      const { error } = await client.auth.admin.updateUserById(authUserId, { password: newPassword });
+      if (error) {
+        const msg = (error.message || '').toLowerCase();
+        if (msg.includes('user not found') || msg.includes('not found')) return false;
+        throw new InternalServerErrorException(`Failed to update password: ${error.message}`);
+      }
+      return true;
+    };
+
+    let updated = await tryUpdatePassword();
+
+    if (!updated) {
+      console.log('🔄 Auth user missing or not found - creating auth user and linking...');
+      const { data: newAuth, error: createError } = await client.auth.admin.createUser({
+        email: targetUser.email.trim().toLowerCase(),
         password: newPassword,
+        email_confirm: true,
+        user_metadata: {
+          first_name: targetUser.first_name,
+          last_name: targetUser.last_name,
+        },
       });
 
-    if (error) {
-      console.error('❌ Error updating user password via Supabase Auth:', error);
-      throw new InternalServerErrorException(
-        `Failed to update password: ${error.message || 'Unknown error'}`,
-      );
+      if (createError) {
+        const msg = (createError.message || '').toLowerCase();
+        if (msg.includes('already') || msg.includes('registered') || createError.status === 422) {
+          const { data: list } = await client.auth.admin.listUsers({ page: 1, perPage: 1000 });
+          const existing = list?.users?.find((u: any) => u.email?.toLowerCase() === targetUser.email?.toLowerCase());
+          if (existing) {
+            authUserId = existing.id;
+            const { error: updateErr } = await client.auth.admin.updateUserById(authUserId, { password: newPassword });
+            if (updateErr) throw new InternalServerErrorException(`Failed to set password: ${updateErr.message}`);
+            updated = true;
+          }
+        }
+        if (!updated) {
+          throw new InternalServerErrorException(`Failed to create auth user: ${createError.message}`);
+        }
+      } else if (newAuth?.user?.id) {
+        authUserId = newAuth.user.id;
+        updated = true;
+      } else if (newAuth?.user) {
+        throw new InternalServerErrorException('Auth user created but no id returned');
+      }
     }
 
-    console.log('✅ Password updated in Supabase Auth, updating has_set_password flag...');
+    if (!authUserId) {
+      throw new InternalServerErrorException('Could not resolve auth user for password update');
+    }
 
-    // Update has_set_password flag in users table
-    await this.supabaseService
-      .getWriteClient(user.access_token)
+    await client
       .from('users')
-      .update({ has_set_password: true })
+      .update({ auth_user_id: authUserId, has_set_password: true })
       .eq('id', id);
 
     console.log('✅ Password update completed successfully');
-
-    return {
-      success: true,
-      message: 'Password updated successfully',
-    };
+    return { success: true, message: 'Password updated successfully' };
   }
 
   /**
