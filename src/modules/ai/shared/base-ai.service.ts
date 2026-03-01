@@ -74,16 +74,16 @@ export abstract class BaseAiService {
   protected async callOpenAI(
     systemPrompt: string,
     userPrompt: string,
-    options: { temperature?: number; maxTokens?: number; model?: 'gpt-4o-mini' | 'gpt-4o' } = {},
+    options: { temperature?: number; maxTokens?: number; model?: string; responseFormat?: 'json' | 'text' } = {},
   ) {
-    const { temperature = 0.7, maxTokens = 1000, model = 'gpt-4o-mini' } = options;
+    const { temperature = 0.7, maxTokens = 1000, model = 'gpt-5-nano', responseFormat } = options;
 
     return this.openaiProvider.chat(
       [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      { model, temperature, maxTokens },
+      { model, temperature, maxTokens, responseFormat },
     );
   }
 
@@ -146,9 +146,40 @@ export abstract class BaseAiService {
         }
       }
 
-      return JSON.parse(cleaned);
+      let parsed: T;
+      try {
+        parsed = JSON.parse(cleaned) as T;
+      } catch {
+        // Possibly truncated: close open brackets and try again
+        const openBraces = (cleaned.match(/{/g) || []).length - (cleaned.match(/}/g) || []).length;
+        const openBrackets = (cleaned.match(/\[/g) || []).length - (cleaned.match(/]/g) || []).length;
+        const repair = ']'.repeat(Math.max(0, openBrackets)) + '}'.repeat(Math.max(0, openBraces));
+        if (repair) {
+          try {
+            parsed = JSON.parse(cleaned + repair) as T;
+          } catch {
+            this.logger.error('Failed to parse AI response', {
+              contentLength: content?.length,
+              tail: content?.slice(-400),
+            });
+            throw new BadRequestException('Failed to parse AI response');
+          }
+        } else {
+          this.logger.error('Failed to parse AI response', {
+            contentLength: content?.length,
+            tail: content?.slice(-400),
+          });
+          throw new BadRequestException('Failed to parse AI response');
+        }
+      }
+      return parsed;
     } catch (error) {
-      this.logger.error('Failed to parse AI response', { content });
+      if (error instanceof BadRequestException) throw error;
+      this.logger.error('Failed to parse AI response', {
+        contentLength: content?.length,
+        tail: content?.slice(-400),
+        error: (error as Error)?.message,
+      });
       throw new BadRequestException('Failed to parse AI response');
     }
   }

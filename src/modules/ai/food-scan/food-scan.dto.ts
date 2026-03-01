@@ -30,6 +30,11 @@ export class FoodScanRequestDto {
   image_urls?: string[];
 
   @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  image_base64?: string[];
+
+  @IsOptional()
   @IsString()
   food_name?: string;
 
