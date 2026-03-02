@@ -61,6 +61,38 @@ export class PetsService {
     return this.findByClinic(user.clinic_id, user);
   }
 
+  /**
+   * Get distinct species, breeds, and statuses for a clinic (for filter dropdowns).
+   * Lightweight alternative to fetching all pets.
+   */
+  async getClinicFilterOptions(
+    clinicId: string,
+    user: UserContext,
+  ): Promise<{ species: string[]; breeds: string[]; statuses: string[] }> {
+    if (!user) {
+      throw new ForbiddenException('User context is required');
+    }
+    this.validateClinicAccess(user, clinicId);
+
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('pets')
+      .select('species, breed, status')
+      .eq('tenant_id', clinicId)
+      .neq('status', 'deleted');
+
+    if (error) {
+      console.error('Error fetching pet filter options:', error);
+      throw error;
+    }
+
+    const rows = data || [];
+    const species = [...new Set(rows.map((r: any) => r.species).filter(Boolean))].sort();
+    const breeds = [...new Set(rows.map((r: any) => r.breed).filter(Boolean))].sort().slice(0, 100);
+    const statuses = [...new Set(rows.map((r: any) => r.status).filter(Boolean))].sort();
+    return { species, breeds, statuses };
+  }
+
   async findByClinic(clinicId: string, user: UserContext) {
     if (!user) {
       throw new ForbiddenException('User context is required');
@@ -94,26 +126,101 @@ export class PetsService {
     }
 
     // Transform the data to match PetWithOwner format
-    return (data || []).map((pet: any) => {
-      const client = pet.clients;
-      const user = client?.users;
+    return (data || []).map((pet: any) => this.transformPetWithOwner(pet));
+  }
 
-      let clientInfo: { id: string; first_name: string; last_name: string } | null = null;
-      if (client && user) {
-        const nameParts = (user.full_name || user.email?.split('@')[0] || 'Unknown').split(' ');
-        clientInfo = {
-          id: client.id,
-          first_name: nameParts[0] || 'Unknown',
-          last_name: nameParts.slice(1).join(' ') || '',
-        };
-      }
+  /**
+   * Paginated and filtered list of pets for a clinic.
+   * Returns { data, total } for the requested page.
+   */
+  async findByClinicPaginated(
+    clinicId: string,
+    user: UserContext,
+    params: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      species?: string[];
+      status?: string[];
+      breed?: string[];
+    },
+  ): Promise<{ data: any[]; total: number }> {
+    if (!user) {
+      throw new ForbiddenException('User context is required');
+    }
+    this.validateClinicAccess(user, clinicId);
 
-      const { clients: _, ...petData } = pet;
-      return {
-        ...petData,
-        clients: clientInfo,
+    const page = Math.max(1, params.page ?? 1);
+    const limit = Math.min(100, Math.max(1, params.limit ?? 10));
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    const client = this.supabaseService.getClient();
+    let query = client
+      .from('pets')
+      .select(
+        `
+        *,
+        clients!client_id (
+          id,
+          user_id,
+          users!user_id (
+            id,
+            email,
+            full_name
+          )
+        )
+      `,
+        { count: 'exact' },
+      )
+      .eq('tenant_id', clinicId)
+      .neq('status', 'deleted');
+
+    if (params.search?.trim()) {
+      const term = `%${params.search.trim()}%`;
+      query = query.or(`name.ilike.${term},species.ilike.${term},breed.ilike.${term}`);
+    }
+    if (params.species?.length) {
+      query = query.in('species', params.species);
+    }
+    if (params.status?.length) {
+      query = query.in('status', params.status);
+    }
+    if (params.breed?.length) {
+      query = query.in('breed', params.breed);
+    }
+
+    const { data, error, count } = await query.order('created_at', { ascending: false }).range(from, to);
+
+    if (error) {
+      console.error('Error fetching paginated pets by clinic:', error);
+      throw error;
+    }
+
+    const total = count ?? 0;
+    const rows = (data || []).map((pet: any) => this.transformPetWithOwner(pet));
+    return { data: rows, total };
+  }
+
+  private transformPetWithOwner(pet: any): any {
+    const client = pet.clients;
+    const user = client?.users;
+
+    let clientInfo: { id: string; first_name: string; last_name: string } | null = null;
+    if (client && user) {
+      const nameParts = (user.full_name || user.email?.split('@')[0] || 'Unknown').split(' ');
+      clientInfo = {
+        id: client.id,
+        first_name: nameParts[0] || 'Unknown',
+        last_name: nameParts.slice(1).join(' ') || '',
       };
-    });
+    }
+
+    const { clients: _, ...petData } = pet;
+    return {
+      ...petData,
+      clients: clientInfo,
+    };
   }
 
   async findByClient(clientId: string) {
