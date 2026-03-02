@@ -31,6 +31,15 @@ export class ChatRequestDto {
   pawscan_context?: string; // JSON string of PawScan results for context
 }
 
+export class AttachMessageImagesDto {
+  @IsString()
+  session_id: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  image_urls: string[];
+}
+
 export interface ChatMetadata {
   pet_context_used: boolean;
   appointments_referenced: boolean;

@@ -23,6 +23,11 @@ export class SupabaseService {
     return this.supabase;
   }
 
+  /** True when the table doesn't exist (schema not deployed). Treat as no data, not a failure. */
+  private isMissingTable(error: { message?: string } | null): boolean {
+    return !!error?.message?.toLowerCase().includes('does not exist');
+  }
+
   // Helper method to get pet data with context
   async getPetContext(petId: string) {
     try {
@@ -112,8 +117,11 @@ export class SupabaseService {
         .order('date_administered', { ascending: false });
 
       if (error) {
-        // Table might not exist - return empty array
-        console.warn('Vaccinations query failed:', error.message);
+        if (this.isMissingTable(error)) {
+          this.logger.debug('vaccinations not in schema, using empty data');
+        } else {
+          this.logger.warn(`Vaccinations query failed: ${error.message}`);
+        }
         return [];
       }
       return data || [];
@@ -191,7 +199,11 @@ export class SupabaseService {
         .order('recorded_at', { ascending: false });
 
       if (weightError) {
-        this.logger.warn(`Weight logs query failed: ${weightError.message}`);
+        if (this.isMissingTable(weightError)) {
+          this.logger.debug('weight_logs not in schema, using empty data');
+        } else {
+          this.logger.warn(`Weight logs query failed: ${weightError.message}`);
+        }
       }
 
       // Try to get activity logs
@@ -203,12 +215,16 @@ export class SupabaseService {
         .order('recorded_at', { ascending: false });
 
       if (activityError) {
-        this.logger.warn(`Activity logs query failed: ${activityError.message}`);
+        if (this.isMissingTable(activityError)) {
+          this.logger.debug('activity_logs not in schema, using empty data');
+        } else {
+          this.logger.warn(`Activity logs query failed: ${activityError.message}`);
+        }
       }
 
       return {
-        weightLogs: weightLogs || [],
-        activityLogs: activityLogs || [],
+        weightLogs: weightLogs ?? [],
+        activityLogs: activityLogs ?? [],
       };
     } catch (err) {
       this.logger.error(`Unexpected error fetching vital history: ${err}`);
@@ -229,7 +245,11 @@ export class SupabaseService {
         .order('next_due_date', { ascending: true });
 
       if (error) {
-        this.logger.warn(`Vaccine status query failed: ${error.message}`);
+        if (this.isMissingTable(error)) {
+          this.logger.debug('vaccinations not in schema, using empty data');
+        } else {
+          this.logger.warn(`Vaccine status query failed: ${error.message}`);
+        }
         return { overdue: [], dueSoon: [], upToDate: [] };
       }
 
@@ -307,7 +327,11 @@ export class SupabaseService {
         .eq('pet_id', petId);
 
       if (error) {
-        this.logger.warn(`Preventive care query failed: ${error.message}`);
+        if (this.isMissingTable(error)) {
+          this.logger.debug('preventive_care not in schema, using empty data');
+        } else {
+          this.logger.warn(`Preventive care query failed: ${error.message}`);
+        }
         return { heartworm: true, fleaTick: true }; // Assume gaps if can't fetch
       }
 

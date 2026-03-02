@@ -4,18 +4,20 @@ import { IsString, IsOptional, IsBoolean, IsEnum } from 'class-validator';
 // Request Types
 // ============================================
 
-export type HealthHubMode =
-  | 'risk_assessment'
-  | 'early_warnings'
-  | 'care_recommendations'
-  | 'full';
+export const HealthHubMode = {
+  risk_assessment: 'risk_assessment',
+  early_warnings: 'early_warnings',
+  care_recommendations: 'care_recommendations',
+  full: 'full',
+} as const;
+export type HealthHubMode = (typeof HealthHubMode)[keyof typeof HealthHubMode];
 
 export class HealthhubRequestDto {
   @IsString()
   pet_id: string;
 
   @IsOptional()
-  @IsEnum(['risk_assessment', 'early_warnings', 'care_recommendations', 'full'])
+  @IsEnum(HealthHubMode)
   mode?: HealthHubMode;
 
   @IsOptional()

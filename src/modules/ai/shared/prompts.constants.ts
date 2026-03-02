@@ -227,6 +227,7 @@ OUTPUT REQUIREMENTS:
 STEP 1: IDENTIFY + SAFETY CHECK (do this FIRST)
 - Identify food, list all ingredients
 - Cross-reference toxic database (provided in user prompt)
+- CHECK FOR ADDITIVES: Identify and flag preservatives (BHA, BHT, ethoxyquin, sodium benzoate, etc.), artificial fillers (cellulose, corn syrup solids, wheat middlings, etc.), artificial dyes/colors (Red 40, Yellow 5, Blue 2, caramel coloring, etc.), and other synthetic or chemically concerning additives. Include these in ingredients with is_toxic or notes as appropriate; factor them into harmful_components and ingredient_quality.
 - Set toxicity_score (0-10) based on worst toxic ingredient severity
 - Set safety_rating: 0-3 = "safe", 4-6 = "caution", 7-10 = "toxic"
 
@@ -241,6 +242,7 @@ STEP 3: RECOMMENDATION (derived from Steps 1+2)
 - safe_to_give = false if any toxic or caution
 - frequency = "Never" if toxic, "Rarely" if caution
 - summary must address pet owner directly with actionable guidance
+- Keep serving_size, frequency, and max_daily_amount to 1-3 words each (e.g. "1-2 pieces", "Occasional", "1-2 servings"). No long sentences.
 
 === PAWMD SCORE (0-100) ===
 
@@ -269,8 +271,8 @@ beneficial_components (20%):
 - Be specific: pumpkin/fiber, fish oil/omega-3, glucosamine, probiotics each add in their range; treats with none land in 5-27.
 
 harmful_components (15%):
-- No concerning ingredients: 88-100. One mild concern (e.g. added salt, natural flavor): 72-87. Moderate (e.g. BHA/BHT, carrageenan, corn syrup): 52-71. Several concerns (artificial colors, propylene glycol, multiple preservatives): 28-51. Many harmful or unknown additives: 0-27.
-- Modifiers: propylene glycol -35 to -45, artificial colors -25 to -35, BHA/BHT -20 to -28, carrageenan -12 to -18, corn syrup/sugar -8 to -15, high sodium -5 to -12.
+- Always consider preservatives, artificial fillers, artificial dyes/colors, and other synthetic additives. No concerning ingredients: 88-100. One mild concern (e.g. added salt, natural flavor): 72-87. Moderate (e.g. BHA/BHT, carrageenan, corn syrup): 52-71. Several concerns (artificial colors, propylene glycol, multiple preservatives, fillers): 28-51. Many harmful or unknown additives: 0-27.
+- Modifiers: propylene glycol -35 to -45, artificial colors/dyes -25 to -35, BHA/BHT/preservatives -20 to -28, carrageenan -12 to -18, corn syrup/sugar -8 to -15, artificial fillers -8 to -15, high sodium -5 to -12.
 
 pet_specific (10%):
 - Ideal for pet's age/breed/needs and no allergens: 80-98. Good fit, no conflicts: 62-79. Neutral: 45-61. Some mismatch (e.g. high fat for sedentary): 28-44. Allergen or serious mismatch: 5-27.
@@ -293,6 +295,10 @@ LABELS:
 - 0-29: "avoid" (toxic or very low quality)
 
 Formula: score = (ingredient_quality × 0.30) + (nutritional_balance × 0.25) + (beneficial_components × 0.20) + (harmful_components × 0.15) + (pet_specific × 0.10)
+
+=== NOTES FIELD (critical) ===
+- The top-level "notes" is for the pet owner only: e.g. "Contains poultry; avoid if allergic." or "Best as occasional treat, not a meal."
+- Never put scan methodology, label visibility, or "identification based on..." in notes. That is internal; the owner only sees notes.
 
 === SUMMARY UNDER SCORE (critical) ===
 
@@ -338,15 +344,15 @@ Does this food ADD value? Answer in health_benefits (one short line) and in summ
   },
   "recommended_serving": {
     "safe_to_give": boolean,
-    "serving_size": "short phrase",
-    "frequency": "short phrase",
-    "max_daily_amount": "short phrase",
+    "serving_size": "1-3 words only (e.g. '1-2 pieces', '1 tbsp')",
+    "frequency": "1-3 words only (e.g. 'Occasional', 'Once daily', '2-3x/week')",
+    "max_daily_amount": "1-3 words only (e.g. '1-2 servings', 'Small handful', 'Per package')",
     "notes": "short phrase only"
   },
   "warnings": [{"level": "critical|warning|info", "message": "one short sentence"}],
   "health_benefits": "1-2 short lines",
   "confidence": 0-100 (integer, specific e.g. 88 not 90),
-  "notes": "1-2 short bullets max, plain language"
+  "notes": "1-2 short bullets for the pet owner only: allergens, moderation tips, or storage. Do NOT describe how the scan was done or what was visible on the label."
 }`,
 
   // ============================================

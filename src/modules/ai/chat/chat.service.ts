@@ -14,10 +14,13 @@ import { fetchImagesAsBase64 } from '../shared/image-utils';
 import { v4 as uuidv4 } from 'uuid';
 
 const MAX_CONTEXT_MESSAGES = 20;
+/** Only messages from the last N hours are sent to the model (avoids re-sending old images). */
+const CHAT_HISTORY_WINDOW_HOURS = 1;
 
 // Cost per 1K tokens (approximate)
 const PRICING = {
   'gpt-4o': { input: 0.0025, output: 0.01 },
+  'gpt-5-mini': { input: 0.0002, output: 0.0006 },
   'gpt-4o-mini': { input: 0.00015, output: 0.0006 },
   'deepseek-chat': { input: 0.00014, output: 0.00028 },
 };
@@ -70,19 +73,35 @@ export class ChatService extends BaseAiService {
       userMessage = `${dto.message}\n\n${documentContent}`;
     }
 
-    // Store user message
+    // Persist image URLs in metadata when client sends URLs (for follow-up context)
+    const imageUrls =
+      dto.images?.filter(
+        (u) => typeof u === 'string' && (u.startsWith('http://') || u.startsWith('https://'))
+      ) ?? [];
     await this.storeMessage(sessionId, 'user', dto.message, {
       has_images: dto.images && dto.images.length > 0,
       has_documents: dto.documents && dto.documents.length > 0,
       image_count: dto.images?.length || 0,
       document_count: dto.documents?.length || 0,
+      ...(imageUrls.length > 0 && { image_urls: imageUrls }),
     });
 
-    // Resolve image URLs to base64 so OpenAI doesn't timeout downloading (e.g. Supabase)
-    const hasImages = !!(dto.images && dto.images.length > 0);
-    const imagesForVision = hasImages
+    // Images may be URLs or data URLs/base64; fetchImagesAsBase64 short-circuits non-URLs
+    let hasImages = !!(dto.images && dto.images.length > 0);
+    let imagesForVision: string[] = hasImages
       ? await fetchImagesAsBase64(dto.images!)
       : [];
+    // Re-attach last in-window user message's images for text-only follow-ups
+    if (!hasImages && imagesForVision.length === 0 && chatHistory.length > 0) {
+      const withMeta = chatHistory as Array<AiChatMessage & { metadata?: { image_urls?: string[] } }>;
+      const lastWithImages = [...withMeta]
+        .reverse()
+        .find((m) => m.role === 'user' && m.metadata?.image_urls?.length);
+      if (lastWithImages?.metadata?.image_urls?.length) {
+        imagesForVision = await fetchImagesAsBase64(lastWithImages.metadata.image_urls);
+        hasImages = imagesForVision.length > 0;
+      }
+    }
     const aiResult = await this.callWithFallback(
       systemPrompt,
       userMessage,
@@ -167,19 +186,22 @@ export class ChatService extends BaseAiService {
   }
 
   /**
-   * Get chat history for a session (max 20 messages)
+   * Get chat history for a session (max 20 messages, time-bound to last CHAT_HISTORY_WINDOW_HOURS).
    */
   private async getChatHistory(sessionId: string): Promise<AiChatMessage[]> {
+    const since = new Date(Date.now() - CHAT_HISTORY_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
     const { data } = await this.getSupabase()
       .from('pawla_chat_messages')
-      .select('role, content')
+      .select('role, content, metadata, created_at')
       .eq('session_id', sessionId)
+      .gte('created_at', since)
       .order('created_at', { ascending: true })
       .limit(MAX_CONTEXT_MESSAGES);
 
     return (data || []).map((msg) => ({
       role: msg.role as 'user' | 'assistant',
       content: msg.content,
+      metadata: msg.metadata,
     }));
   }
 
@@ -486,6 +508,32 @@ export class ChatService extends BaseAiService {
   }
 
   /**
+   * Attach image URLs to the most recent user message in the session (called by client after deferred upload).
+   */
+  async attachMessageImageUrls(
+    sessionId: string,
+    imageUrls: string[],
+    userId: string,
+  ): Promise<{ ok: boolean }> {
+    if (!sessionId || !imageUrls?.length) return { ok: false };
+    const { data: messages } = await this.getSupabase()
+      .from('pawla_chat_messages')
+      .select('id, role, metadata')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const last = messages?.[0];
+    if (!last || last.role !== 'user') return { ok: false };
+    const metadata = (last.metadata as Record<string, unknown>) ?? {};
+    const updated = { ...metadata, image_urls: imageUrls };
+    await this.getSupabase()
+      .from('pawla_chat_messages')
+      .update({ metadata: updated })
+      .eq('id', last.id);
+    return { ok: true };
+  }
+
+  /**
    * Calculate cost based on model and tokens
    */
   private calculateCost(
@@ -493,7 +541,7 @@ export class ChatService extends BaseAiService {
     totalTokens: number,
     inputTokens: number,
   ): number {
-    const pricing = PRICING[model as keyof typeof PRICING] || PRICING['gpt-4o-mini'];
+    const pricing = PRICING[model as keyof typeof PRICING] || PRICING['gpt-5-mini'];
     const outputTokens = totalTokens - inputTokens;
     return (
       (inputTokens / 1000) * pricing.input +

@@ -20,7 +20,7 @@ import { HealthhubService } from './healthhub/healthhub.service';
 import { SoapService } from './soap/soap.service';
 
 // DTOs
-import { ChatRequestDto } from './chat/chat.dto';
+import { ChatRequestDto, AttachMessageImagesDto } from './chat/chat.dto';
 import { PawScanRequestDto } from './pawscan/pawscan.dto';
 import { FoodScanRequestDto } from './food-scan/food-scan.dto';
 import { NutritionAnalyzeRequestDto } from './nutrition/nutrition.dto';
@@ -50,6 +50,19 @@ export class AiController {
   @HttpCode(HttpStatus.OK)
   async chat(@Body() dto: ChatRequestDto, @Request() req: any) {
     return this.chatService.chat(dto, req.user.sub);
+  }
+
+  @Post('chat/attach-message-images')
+  @HttpCode(HttpStatus.OK)
+  async attachMessageImages(
+    @Body() dto: AttachMessageImagesDto,
+    @Request() req: any,
+  ) {
+    return this.chatService.attachMessageImageUrls(
+      dto.session_id,
+      dto.image_urls,
+      req.user.sub,
+    );
   }
 
   // ============================================

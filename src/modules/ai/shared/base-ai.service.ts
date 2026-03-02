@@ -111,6 +111,10 @@ export abstract class BaseAiService {
    * Handles AI output with leading text and/or markdown code blocks (```json ... ```).
    */
   protected parseJsonResponse<T = any>(content: string): T {
+    if (content == null || typeof content !== 'string' || !content.trim()) {
+      this.logger.error('parseJsonResponse: empty or missing content');
+      throw new BadRequestException('AI returned an empty response. Please try again.');
+    }
     try {
       let cleaned = content.trim();
 

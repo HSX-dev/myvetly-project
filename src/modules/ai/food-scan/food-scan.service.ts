@@ -71,7 +71,6 @@ export class FoodScanService extends BaseAiService {
         imageBase64 = await fetchImagesAsBase64(dto.image_urls!);
       }
 
-      // Two-tier strategy: try gpt-5-mini first (fast), escalate to gpt-4o if empty or needed
       response = await this.analyzeWithImages(
         AI_PROMPTS.FOOD_SCAN_SYSTEM,
         userPrompt,
@@ -79,30 +78,6 @@ export class FoodScanService extends BaseAiService {
         'gpt-5-mini',
       );
       modelUsed = 'gpt-5-mini';
-
-      const emptyContent = !response?.content?.trim();
-      if (emptyContent) {
-        this.logger.warn('FoodScan: gpt-5-mini returned empty content, escalating to gpt-4o');
-        response = await this.analyzeWithImages(
-          AI_PROMPTS.FOOD_SCAN_SYSTEM,
-          userPrompt,
-          imageBase64,
-          'gpt-4o',
-        );
-        modelUsed = 'gpt-4o';
-      } else {
-        const firstResult = this.parseJsonResponse<FoodScanAnalysis>(response.content);
-        if (this.needsEscalation(firstResult)) {
-          this.logger.debug('Escalating to gpt-4o for better analysis');
-          response = await this.analyzeWithImages(
-            AI_PROMPTS.FOOD_SCAN_SYSTEM,
-            userPrompt,
-            imageBase64,
-            'gpt-4o',
-          );
-          modelUsed = 'gpt-4o';
-        }
-      }
     } else {
       // Use gpt-5-mini for text-only analysis
       const textOptions: { temperature: number; maxTokens: number; responseFormat: 'json'; model: string } = {
@@ -116,6 +91,12 @@ export class FoodScanService extends BaseAiService {
     }
 
     const latency = Date.now() - startTime;
+    if (!response?.content?.trim()) {
+      this.logger.warn('FoodScan: AI returned empty content (gpt-5-mini may have used tokens on reasoning)');
+      throw new BadRequestException(
+        'Analysis returned no result. Please try again or use a clearer image of the ingredient label.',
+      );
+    }
     const result = this.parseJsonResponse<FoodScanAnalysis>(response.content);
 
     // Enforce: toxic_ingredients and severity drive score, recommendation, and risk (single source of truth)
@@ -198,6 +179,7 @@ export class FoodScanService extends BaseAiService {
 
 IMPORTANT: Analyze the attached image(s) to identify the food item or ingredient label. Be specific about what you see.`;
 
+    // gpt-5-mini needs higher max_completion_tokens: reasoning uses tokens first, then output
     return this.openaiProvider.chatWithVision(
       systemPrompt,
       fullPrompt,
@@ -205,42 +187,11 @@ IMPORTANT: Analyze the attached image(s) to identify the food item or ingredient
       [],
       {
         model,
-        maxTokens: 1400,
+        maxTokens: 8192,
         temperature: 0.3,
         responseFormat: 'json',
       },
     );
-  }
-
-  private readonly ESCALATION_CONFIDENCE_THRESHOLD = 70;
-  private readonly GENERIC_FOOD_NAMES = [
-    'unknown food',
-    'unable to identify',
-    'unidentified',
-    'food item',
-    'unknown',
-  ];
-
-  /**
-   * Check if result needs escalation to gpt-4o
-   */
-  private needsEscalation(result: FoodScanAnalysis): boolean {
-    if (result.confidence < this.ESCALATION_CONFIDENCE_THRESHOLD) {
-      this.logger.debug(
-        `Escalation needed: confidence ${result.confidence} < ${this.ESCALATION_CONFIDENCE_THRESHOLD}`,
-      );
-      return true;
-    }
-    if (result.safety_rating === 'unknown') {
-      this.logger.debug('Escalation needed: safety_rating is unknown');
-      return true;
-    }
-    const nameLower = (result.food_name || '').toLowerCase().trim();
-    if (this.GENERIC_FOOD_NAMES.some((g) => nameLower.includes(g))) {
-      this.logger.debug(`Escalation needed: generic food name "${result.food_name}"`);
-      return true;
-    }
-    return false;
   }
 
   /**
@@ -387,7 +338,7 @@ IMPORTANT: Analyze the attached image(s) to identify the food item or ingredient
     if (model === 'gpt-5-mini') {
       return parseFloat(((tokensUsed / 1000) * 0.0002).toFixed(6));
     }
-    // gpt-4o-mini fallback
+    // gpt-5-mini fallback
     return parseFloat(((tokensUsed / 1000) * 0.0004).toFixed(6));
   }
 

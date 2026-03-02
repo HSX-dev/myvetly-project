@@ -5,7 +5,7 @@ const MAX_CONTENT_LENGTH = 10 * 1024 * 1024; // 10MB
 
 /**
  * Fetch image URLs and return as base64 data URLs.
- * Items that are already data URLs or base64 are returned as-is (or normalized to data URL).
+ * Fast-path: data URLs and non-URL (raw base64) are returned as-is or normalized; only http(s) are fetched.
  * Avoids OpenAI timing out when downloading from external URLs (e.g. Supabase storage).
  */
 export async function fetchImagesAsBase64(images: string[]): Promise<string[]> {
@@ -14,7 +14,6 @@ export async function fetchImagesAsBase64(images: string[]): Promise<string[]> {
       if (!img || typeof img !== 'string') return img;
       if (img.startsWith('data:')) return img;
       if (!img.startsWith('http://') && !img.startsWith('https://')) {
-        // Assume raw base64
         return img.includes(',') ? img : `data:image/jpeg;base64,${img}`;
       }
       const res = await axios.get(img, {
