@@ -11,6 +11,7 @@ export interface AiChatOptions {
   model?: string;
   temperature?: number;
   maxTokens?: number;
+  responseFormat?: 'json' | 'text';
 }
 
 export interface AiChatResponse {
@@ -32,17 +33,29 @@ export class OpenaiProvider {
     messages: AiChatMessage[],
     options: AiChatOptions = {},
   ): Promise<AiChatResponse> {
-    const { model = 'gpt-4o-mini', temperature = 0.7, maxTokens = 1000 } = options;
+    const { model = 'gpt-5-mini', temperature = 0.7, maxTokens = 1000, responseFormat } = options;
+    // gpt-5/mini/nano: reasoning models use max_completion_tokens (max 128k for gpt-5-mini); temperature omitted per API
+    const isGpt5 = model.startsWith('gpt-5');
 
     const response = await this.openai.chat.completions.create({
       model,
       messages: messages as OpenAI.Chat.ChatCompletionMessageParam[],
-      temperature,
-      max_tokens: maxTokens,
+      ...(isGpt5 ? { max_completion_tokens: maxTokens } : { temperature, max_tokens: maxTokens }),
+      ...(responseFormat === 'json' && { response_format: { type: 'json_object' } }),
     });
 
+    const rawContent = response.choices[0]?.message?.content;
+    const content = typeof rawContent === 'string'
+      ? rawContent
+      : Array.isArray(rawContent)
+        ? (rawContent as { type: string; text?: string }[])
+            .filter((p) => p.type === 'text' && p.text)
+            .map((p) => p.text)
+            .join('')
+        : '';
+
     return {
-      content: response.choices[0]?.message?.content || '',
+      content,
       tokensUsed: response.usage?.total_tokens || 0,
     };
   }
@@ -53,6 +66,8 @@ export class OpenaiProvider {
     options: { model?: string; maxTokens?: number } = {},
   ): Promise<AiChatResponse> {
     const { model = 'gpt-4o', maxTokens = 1000 } = options;
+    // gpt-5: use max_completion_tokens (temperature not sent for reasoning models)
+    const isGpt5 = model.startsWith('gpt-5');
 
     // Determine if it's a URL or base64
     let imageUrl: string;
@@ -83,11 +98,21 @@ export class OpenaiProvider {
           ],
         },
       ],
-      max_tokens: maxTokens,
+      ...(isGpt5 ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens }),
     });
 
+    const rawContent = response.choices[0]?.message?.content;
+    const content = typeof rawContent === 'string'
+      ? rawContent
+      : Array.isArray(rawContent)
+        ? (rawContent as { type: string; text?: string }[])
+            .filter((p) => p.type === 'text' && p.text)
+            .map((p) => p.text)
+            .join('')
+        : '';
+
     return {
-      content: response.choices[0]?.message?.content || '',
+      content,
       tokensUsed: response.usage?.total_tokens || 0,
     };
   }
@@ -103,7 +128,9 @@ export class OpenaiProvider {
     chatHistory: AiChatMessage[] = [],
     options: AiChatOptions = {},
   ): Promise<AiChatResponse> {
-    const { model = 'gpt-4o', temperature = 0.7, maxTokens = 1000 } = options;
+    const { model = 'gpt-4o', temperature = 0.7, maxTokens = 1000, responseFormat } = options;
+    // gpt-5: max_completion_tokens only; temperature omitted for reasoning models
+    const isGpt5 = model.startsWith('gpt-5');
 
     // Build image content parts
     const imageContent = images.map((img) => ({
@@ -135,12 +162,22 @@ export class OpenaiProvider {
     const response = await this.openai.chat.completions.create({
       model,
       messages,
-      temperature,
-      max_tokens: maxTokens,
+      ...(isGpt5 ? { max_completion_tokens: maxTokens } : { temperature, max_tokens: maxTokens }),
+      ...(responseFormat === 'json' && { response_format: { type: 'json_object' } }),
     });
 
+    const rawContent = response.choices[0]?.message?.content;
+    const content = typeof rawContent === 'string'
+      ? rawContent
+      : Array.isArray(rawContent)
+        ? (rawContent as { type: string; text?: string }[])
+            .filter((p) => p.type === 'text' && p.text)
+            .map((p) => p.text)
+            .join('')
+        : '';
+
     return {
-      content: response.choices[0]?.message?.content || '',
+      content,
       tokensUsed: response.usage?.total_tokens || 0,
     };
   }
@@ -154,7 +191,9 @@ export class OpenaiProvider {
     chatHistory: AiChatMessage[] = [],
     options: AiChatOptions = {},
   ): Promise<AiChatResponse> {
-    const { model = 'gpt-4o-mini', temperature = 0.7, maxTokens = 1000 } = options;
+    const { model = 'gpt-5-mini', temperature = 0.7, maxTokens = 1000 } = options;
+    // gpt-5: max_completion_tokens only (max 128k for gpt-5-mini); temperature omitted
+    const isGpt5 = model.startsWith('gpt-5');
 
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       { role: 'system', content: systemPrompt },
@@ -170,12 +209,21 @@ export class OpenaiProvider {
     const response = await this.openai.chat.completions.create({
       model,
       messages,
-      temperature,
-      max_tokens: maxTokens,
+      ...(isGpt5 ? { max_completion_tokens: maxTokens } : { temperature, max_tokens: maxTokens }),
     });
 
+    const rawContent = response.choices[0]?.message?.content;
+    const content = typeof rawContent === 'string'
+      ? rawContent
+      : Array.isArray(rawContent)
+        ? (rawContent as { type: string; text?: string }[])
+            .filter((p) => p.type === 'text' && p.text)
+            .map((p) => p.text)
+            .join('')
+        : '';
+
     return {
-      content: response.choices[0]?.message?.content || '',
+      content,
       tokensUsed: response.usage?.total_tokens || 0,
     };
   }

@@ -75,10 +75,11 @@ export class TrainingService extends BaseAiService {
       // Fallback to OpenAI if DeepSeek fails
       this.logger.warn('DeepSeek failed, falling back to OpenAI');
       response = await this.callOpenAI(AI_PROMPTS.TRAINING_SYSTEM, userPrompt, {
+        model: 'gpt-5-mini',
         temperature: 0.7,
         maxTokens: 1800,
       });
-      modelUsed = 'gpt-4o-mini';
+      modelUsed = 'gpt-5-mini';
     }
 
     const latency = Date.now() - startTime;

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException, BadGatewayException } from '@nestjs/common';
 import { SupabaseService } from '../../../infrastructure/supabase/supabase.service';
 import { RedisService } from '../../../infrastructure/cache/redis.service';
 import { OpenaiProvider, DeepseekProvider } from '../../../infrastructure/ai-providers';
@@ -148,13 +148,39 @@ export class HealthhubService extends BaseAiService {
       preventiveCareGaps,
     );
 
-    const response = await this.callOpenAI(
+    const userPrompt = `RISK ASSESSMENT REQUEST\n\nPET HEALTH SUMMARY:\n${summaryJson}\n\nAnalyze this data and return the risk assessment JSON.`;
+    const response = await this.callOpenAIWithFallback(
       AI_PROMPTS.HEALTHHUB_RISK_ASSESSMENT,
-      `RISK ASSESSMENT REQUEST\n\nPET HEALTH SUMMARY:\n${summaryJson}\n\nAnalyze this data and return the risk assessment JSON.`,
-      { temperature: 0.5, maxTokens: 1500 },
+      userPrompt,
+      { temperature: 0.5, maxTokens: 2000, responseFormat: 'json' as const },
     );
-
+    if (!response?.content?.trim()) {
+      this.logger.warn('Risk assessment: AI returned empty content after fallback');
+      throw new BadGatewayException('AI could not generate a risk assessment. Please try again in a few minutes.');
+    }
     return this.parseJsonResponse<RiskAssessmentResult>(response.content);
+  }
+
+  /** Call OpenAI with gpt-5-mini, fallback to gpt-4o-mini on empty or API error (e.g. 400). */
+  private async callOpenAIWithFallback(
+    systemPrompt: string,
+    userPrompt: string,
+    options: { temperature?: number; maxTokens?: number; responseFormat?: 'json' | 'text' },
+  ) {
+    const opts = { ...options, model: 'gpt-5-mini' as const };
+    try {
+      const response = await this.callOpenAI(systemPrompt, userPrompt, opts);
+      if (response?.content?.trim()) return response;
+      this.logger.warn('HealthHub: gpt-5-mini returned empty content, trying gpt-4o-mini');
+    } catch (err: any) {
+      this.logger.warn(`HealthHub: gpt-5-mini failed (${err?.message || err}), trying gpt-4o-mini`);
+    }
+    try {
+      return await this.callOpenAI(systemPrompt, userPrompt, { ...options, model: 'gpt-4o-mini' });
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || 'AI service error';
+      throw new BadGatewayException(`AI service temporarily unavailable: ${msg}`);
+    }
   }
 
   private buildRiskAssessmentSummary(
@@ -374,13 +400,13 @@ export class HealthhubService extends BaseAiService {
       pawscanHistory,
     );
 
-    const response = await this.callOpenAI(
+    const response = await this.callOpenAIWithFallback(
       AI_PROMPTS.HEALTHHUB_EARLY_WARNINGS,
       `EARLY WARNINGS ANALYSIS REQUEST\n\nVITAL TRENDS DATA:\n${summaryJson}\n\nAnalyze for concerning trends and return the alerts JSON. If everything looks normal, return an empty alerts array.`,
-      { temperature: 0.4, maxTokens: 1000 },
+      { temperature: 0.4, maxTokens: 1500, responseFormat: 'json' },
     );
-
-    return this.parseJsonResponse<EarlyWarningsResult>(response.content);
+    const content = response?.content?.trim() || '{"alerts":[]}';
+    return this.parseJsonResponse<EarlyWarningsResult>(content);
   }
 
   private buildEarlyWarningsSummary(
@@ -467,12 +493,15 @@ export class HealthhubService extends BaseAiService {
       pawscanHistory,
     );
 
-    const response = await this.callOpenAI(
+    const response = await this.callOpenAIWithFallback(
       AI_PROMPTS.HEALTHHUB_CARE_RECOMMENDATIONS,
       `CARE RECOMMENDATIONS REQUEST\n\nPET PROFILE AND HISTORY:\n${summaryJson}\n\nProvide personalized, preventive, and seasonal care recommendations. Return JSON only.`,
-      { temperature: 0.6, maxTokens: 1200 },
+      { temperature: 0.6, maxTokens: 1500, responseFormat: 'json' },
     );
-
+    if (!response?.content?.trim()) {
+      this.logger.warn('Care recommendations: AI returned empty after fallback');
+      return { recommendations: [] };
+    }
     return this.parseJsonResponse<CareRecommendationsResult>(response.content);
   }
 

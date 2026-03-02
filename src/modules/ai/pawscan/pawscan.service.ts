@@ -63,16 +63,18 @@ export class PawscanService extends BaseAiService {
     let modelUsed: string;
 
     if (dto.media && dto.media.length > 0) {
+      // media may be URLs or data URLs/base64; fetchImagesAsBase64 short-circuits non-URLs
       const mediaBase64 = await fetchImagesAsBase64(dto.media);
       response = await this.analyzeWithImages(AI_PROMPTS.PAWSCAN_SYSTEM, userPrompt, mediaBase64);
       modelUsed = 'gpt-4o';
     } else {
-      // Use gpt-4o-mini for fast initial analysis
+      // Use gpt-5-mini for fast initial analysis
       response = await this.callOpenAI(AI_PROMPTS.PAWSCAN_SYSTEM, userPrompt, {
+        model: 'gpt-5-mini',
         temperature: 0.3,
         maxTokens: 1000,
       });
-      modelUsed = 'gpt-4o-mini';
+      modelUsed = 'gpt-5-mini';
     }
 
     const result = this.parseJsonResponse(response.content);
@@ -379,6 +381,7 @@ Return JSON (medications MUST have at least 1-2 items unless literally nothing e
 }`;
 
     const response = await this.callOpenAI(AI_PROMPTS.PAWSCAN_TREATMENT_SYSTEM, prompt, {
+      model: 'gpt-5-mini',
       temperature: 0.5,
       maxTokens: 800,
     });
@@ -397,7 +400,7 @@ Return JSON (medications MUST have at least 1-2 items unless literally nothing e
     return {
       treatment_guide: treatmentGuide,
       latency_ms: Date.now() - startTime,
-      model_used: 'gpt-4o-mini',
+      model_used: 'gpt-5-mini',
     };
   }
 
