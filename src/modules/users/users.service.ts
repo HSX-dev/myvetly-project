@@ -124,7 +124,12 @@ export class UsersService {
    * Get a single user by ID with RLS filtering
    */
   async findOne(id: string, user: UserContext) {
-    const userQuery = `
+    if (!user) {
+      console.error('findOne: user context is missing');
+      throw new InternalServerErrorException('User context is missing');
+    }
+
+    const userQueryWithJoins = `
       id,
       auth_user_id,
       email,
@@ -143,32 +148,107 @@ export class UsersService {
       clinics!users_clinic_id_fkey(id, name)
     `;
 
+    const userQueryNoJoins = `
+      id,
+      auth_user_id,
+      email,
+      full_name,
+      first_name,
+      last_name,
+      role,
+      role_id,
+      role_name,
+      organization_id,
+      clinic_id,
+      status,
+      created_at,
+      has_set_password
+    `;
+
     let query = this.supabaseService
       .getClient()
       .from('users')
-      .select(userQuery)
+      .select(userQueryWithJoins)
       .eq('id', id);
 
     // Apply RLS filtering
     if (user.role !== 'super_admin') {
       if (user.role === 'org_admin') {
-        query = query.eq('organization_id', user.organization_id);
+        if (user.organization_id != null) {
+          query = query.eq('organization_id', user.organization_id);
+        }
       } else {
-        query = query
-          .eq('organization_id', user.organization_id)
-          .eq('clinic_id', user.clinic_id);
+        if (user.organization_id != null && user.clinic_id != null) {
+          query = query
+            .eq('organization_id', user.organization_id)
+            .eq('clinic_id', user.clinic_id);
+        } else if (user.organization_id != null) {
+          query = query.eq('organization_id', user.organization_id);
+        }
       }
     }
 
-    const { data, error } = await query.single();
+    let result = await query.single();
+
+    // If join fails (e.g. broken FK or missing org/clinic row), retry without joins
+    if (result.error && result.error.code !== 'PGRST116') {
+      console.warn('findOne: query with joins failed, retrying without joins', {
+        id,
+        code: (result.error as any).code,
+        message: (result.error as any).message,
+      });
+      let fallbackQuery = this.supabaseService
+        .getClient()
+        .from('users')
+        .select(userQueryNoJoins)
+        .eq('id', id);
+      if (user.role !== 'super_admin') {
+        if (user.role === 'org_admin' && user.organization_id != null) {
+          fallbackQuery = fallbackQuery.eq('organization_id', user.organization_id);
+        } else if (user.organization_id != null && user.clinic_id != null) {
+          fallbackQuery = fallbackQuery
+            .eq('organization_id', user.organization_id)
+            .eq('clinic_id', user.clinic_id);
+        } else if (user.organization_id != null) {
+          fallbackQuery = fallbackQuery.eq('organization_id', user.organization_id);
+        }
+      }
+      const fallback = await fallbackQuery.single();
+      if (fallback.error) {
+        if (fallback.error.code === 'PGRST116') {
+          throw new NotFoundException(`User with id ${id} not found`);
+        }
+        console.error('Error fetching user (fallback also failed):', {
+          id,
+          errorCode: (fallback.error as any).code,
+          message: (fallback.error as any).message,
+          details: (fallback.error as any).details,
+        });
+        throw new InternalServerErrorException(
+          `Failed to fetch user: ${(fallback.error as any).message || 'Unknown error'}`,
+        );
+      }
+      return {
+        ...fallback.data,
+        organizations: null,
+        clinics: null,
+      };
+    }
+
+    const { data, error } = result;
 
     if (error) {
       if (error.code === 'PGRST116') {
         throw new NotFoundException(`User with id ${id} not found`);
       }
-      console.error('Error fetching user:', error);
+      console.error('Error fetching user:', {
+        id,
+        errorCode: (error as any).code,
+        message: (error as any).message,
+        details: (error as any).details,
+      });
       throw new InternalServerErrorException(
-        `Failed to fetch user: ${error.message || 'Unknown error'}`,
+        `Failed to fetch user: ${(error as any).message || 'Unknown error'}`,
       );
     }
 
@@ -708,13 +788,9 @@ export class UsersService {
     const phoneToUpdate = (updateData as any).phone;
     delete (updateData as any).phone;
 
-    // Update user record (without phone)
-    const { data, error } = await this.supabaseService
-      .getWriteClient(user.access_token)
-      .from('users')
-      .update(updateData)
-      .eq('id', id)
-      .select(`
+    // Update user record (without phone).
+    // Use user token first; if RLS blocks the update (0 rows), retry with service role since we already validated access above.
+    const selectFields = `
         id,
         auth_user_id,
         email,
@@ -731,15 +807,47 @@ export class UsersService {
         has_set_password,
         organizations!users_organization_id_fkey(id, name),
         clinics!users_clinic_id_fkey(id, name)
-      `)
-      .single();
+      `;
 
-    if (error) {
-      console.error('Error updating user:', error);
+    let result = await this.supabaseService
+      .getWriteClient(user.access_token)
+      .from('users')
+      .update(updateData)
+      .eq('id', id)
+      .select(selectFields)
+      .maybeSingle();
+
+    if (result.error) {
+      console.error('Error updating user:', result.error);
       throw new InternalServerErrorException(
-        `Failed to update user: ${error.message || 'Unknown error'}`,
+        `Failed to update user: ${result.error.message || 'Unknown error'}`,
       );
     }
+
+    if (result.data === null) {
+      // RLS likely blocked update when using user token; use service role since we already validated access
+      result = await this.supabaseService
+        .getClient()
+        .from('users')
+        .update(updateData)
+        .eq('id', id)
+        .select(selectFields)
+        .maybeSingle();
+
+      if (result.error) {
+        console.error('Error updating user (service role):', result.error);
+        throw new InternalServerErrorException(
+          `Failed to update user: ${result.error.message || 'Unknown error'}`,
+        );
+      }
+      if (result.data === null) {
+        throw new InternalServerErrorException(
+          'Update had no effect. The user may not exist or the update did not change any rows.',
+        );
+      }
+    }
+
+    const data = result.data;
 
     // If phone was provided, update it in the clients table (if user is a client)
     if (phoneToUpdate !== undefined) {

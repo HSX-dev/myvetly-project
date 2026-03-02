@@ -76,6 +76,143 @@ export class ClientsService {
   }
 
   /**
+   * Paginated and filtered list of clients.
+   * Returns { data, total } for the requested page.
+   * Used by the admin clients list page for server-side filtering and pagination.
+   * This GET never returns an error response: on any failure (query error, search failure, etc.)
+   * it returns 200 with { data: [], total: 0 } so the client can show an empty list.
+   */
+  async findAllPaginated(
+    user: UserContext,
+    params: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      client_type?: string[];
+      gender?: string[];
+    },
+  ): Promise<{ data: any[]; total: number }> {
+    const empty = (): { data: any[]; total: number } => ({ data: [], total: 0 });
+
+    try {
+      const organizationId = user.organization_id;
+      const role = user.role;
+
+      const page = Math.max(1, Number(params.page) || 1);
+      const limit = Math.min(100, Math.max(1, Number(params.limit) || 10));
+      const from = (page - 1) * limit;
+      const to = from + limit - 1;
+
+      const client = this.supabaseService.getClient();
+
+      // Base query: same structure as pets - .select() then base filters, then optional search .or()
+      let query = client
+        .from('clients')
+        .select(
+          `
+        *,
+        users!clients_user_id_fkey ( first_name, last_name, full_name, email ),
+        pets!pets_client_id_fkey ( id, name, client_id )
+      `,
+          { count: 'exact' },
+        )
+        .or('status.is.null,status.neq.deleted');
+
+      if (role !== 'super_admin') {
+        if (!organizationId) {
+          return empty();
+        }
+        query = query.or(`organization_id.eq.${organizationId},organization_id.is.null`);
+      }
+
+      // Search: copy pets pattern exactly - one .or() with term = %search% on searchable columns
+      if (params.search?.trim()) {
+        try {
+          const term = `%${params.search.trim()}%`;
+          const userIdsSet = new Set<string>();
+          const userQueries = [
+            client.from('users').select('id').ilike('full_name', term),
+            client.from('users').select('id').ilike('email', term),
+            client.from('users').select('id').ilike('first_name', term),
+            client.from('users').select('id').ilike('last_name', term),
+          ];
+          const userResults = await Promise.all(userQueries);
+          console.log('Clients search userResults:', {
+            byFullName: { data: userResults[0]?.data, error: userResults[0]?.error },
+            byEmail: { data: userResults[1]?.data, error: userResults[1]?.error },
+            byFirstName: { data: userResults[2]?.data, error: userResults[2]?.error },
+            byLastName: { data: userResults[3]?.data, error: userResults[3]?.error },
+          });
+          userResults.forEach((r) => {
+            if (r.data) (r.data as { id: string }[]).forEach((u) => userIdsSet.add(u.id));
+          });
+          const userIds = Array.from(userIdsSet);
+          console.log('Clients search userIds (used in user_id.in):', userIds.length, userIds);
+          // Same .or() shape as pets. Note: clients table has clinic_id, not clinic_name - search phone + user_id only
+          const searchOr =
+            userIds.length > 0
+              ? `phone.ilike.${term},user_id.in.(${userIds.join(',')})`
+              : `phone.ilike.${term}`;
+          query = query.or(searchOr);
+        } catch (err) {
+          console.warn('Clients search filter failed:', err);
+        }
+      }
+
+      if (params.client_type?.length) {
+        query = query.in('client_type', params.client_type);
+      }
+      if (params.gender?.length) {
+        query = query.in('gender', params.gender);
+      }
+
+      const { data, error, count } = await query
+        .order('created_at', { ascending: false })
+        .range(from, to);
+
+      if (error) {
+        console.warn('Clients findAllPaginated query error:', error);
+        return empty();
+      }
+
+      const total = count ?? 0;
+      if (!data || data.length === 0) {
+        return { data: [], total };
+      }
+
+      const clients = data
+        .map((item: any) => {
+          const userRow = Array.isArray(item.users) ? item.users[0] : item.users;
+          let pets: Array<{ id: string; name: string }> = [];
+          if (item.pets) {
+            const petsArray = Array.isArray(item.pets) ? item.pets : [item.pets];
+            pets = petsArray
+              .filter((pet: any) => pet && pet.id)
+              .map((pet: any) => ({
+                id: pet.id,
+                name: pet.name || 'Unnamed Pet',
+              }));
+          }
+          return {
+            ...item,
+            first_name: userRow?.first_name ?? '',
+            last_name: userRow?.last_name ?? '',
+            full_name: userRow?.full_name ?? '',
+            email: userRow?.email ?? '',
+            clinic_name: item.clinic_name || 'N/A',
+            pet_names: pets,
+          };
+        })
+        .filter((c: any) => c.id);
+
+      return { data: clients, total };
+    } catch (err) {
+      console.warn('Clients findAllPaginated failed, returning empty:', err);
+      return empty();
+    }
+  }
+
+  /**
    * Get all clients including deleted ones
    */
   async findAllIncludingDeleted(user: UserContext) {

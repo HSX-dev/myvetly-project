@@ -8,6 +8,7 @@ import {
   Delete,
   HttpCode,
   HttpStatus,
+  Query,
 } from '@nestjs/common';
 import { ClientsService } from './clients.service';
 import { CreateClientDto, UpdateClientDto, CreateClientNoteDto, UpdateClientNoteDto } from './dto';
@@ -25,7 +26,25 @@ export class ClientsController {
   }
 
   @Get()
-  findAll(@GetUser() user: any) {
+  findAll(
+    @GetUser() user: any,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('search') search?: string,
+    @Query('client_type') client_type?: string,
+    @Query('gender') gender?: string,
+  ) {
+    const hasPaginatedParams =
+      page != null || limit != null || search?.trim() || client_type?.trim() || gender?.trim();
+    if (hasPaginatedParams) {
+      return this.clientsService.findAllPaginated(user, {
+        page: page ? parseInt(page, 10) : 1,
+        limit: limit ? parseInt(limit, 10) : 10,
+        search: search?.trim() || undefined,
+        client_type: client_type ? client_type.split(',').map((s) => s.trim()).filter(Boolean) : undefined,
+        gender: gender ? gender.split(',').map((s) => s.trim()).filter(Boolean) : undefined,
+      });
+    }
     return this.clientsService.findAll(user);
   }
 
