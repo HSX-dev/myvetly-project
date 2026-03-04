@@ -6,6 +6,7 @@ import {
   Request,
   HttpCode,
   HttpStatus,
+  HttpException,
 } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
 
@@ -80,7 +81,18 @@ export class AiController {
   @Post('food-scan')
   @HttpCode(HttpStatus.OK)
   async foodScan(@Body() dto: FoodScanRequestDto, @Request() req: any) {
-    return this.foodScanService.analyze(dto, req.user.sub);
+    const userId = req.user?.sub ?? req.user?.id;
+    const FOOD_SCAN_TIMEOUT_MS = 55_000; // Slightly under client timeout so we return 504 instead of client timing out
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new HttpException(
+        'Food scan took too long. Please try again.',
+        HttpStatus.GATEWAY_TIMEOUT,
+      )), FOOD_SCAN_TIMEOUT_MS)
+    );
+    return Promise.race([
+      this.foodScanService.analyze(dto, userId),
+      timeoutPromise,
+    ]);
   }
 
   // ============================================

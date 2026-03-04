@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { SupabaseService } from '../../../infrastructure/supabase/supabase.service';
 import { RedisService } from '../../../infrastructure/cache/redis.service';
-import { OpenaiProvider, DeepseekProvider } from '../../../infrastructure/ai-providers';
+import { OpenaiProvider, DeepseekProvider, GeminiProvider } from '../../../infrastructure/ai-providers';
 import { BaseAiService } from '../shared/base-ai.service';
 import { AI_PROMPTS, RATE_LIMITS } from '../shared/prompts.constants';
 import {
@@ -11,7 +11,7 @@ import {
   PawScanFollowUpRequiredDto,
   PawScanAnalyzeResponse,
 } from './pawscan.dto';
-import { NotFoundException } from '../../../common/exceptions';
+import { BadRequestException, NotFoundException } from '../../../common/exceptions';
 import { fetchImagesAsBase64 } from '../shared/image-utils';
 
 @Injectable()
@@ -21,6 +21,7 @@ export class PawscanService extends BaseAiService {
     redisService: RedisService,
     openaiProvider: OpenaiProvider,
     deepseekProvider: DeepseekProvider,
+    private readonly geminiProvider: GeminiProvider,
   ) {
     super(supabaseService, redisService, openaiProvider, deepseekProvider);
   }
@@ -59,25 +60,89 @@ export class PawscanService extends BaseAiService {
     const userPrompt = this.buildUserPrompt(dto.answers, pet);
 
     // Use vision model if images provided, otherwise use fast model for initial analysis
-    let response;
+    let response: { content: string; tokensUsed: number };
     let modelUsed: string;
+    let mediaBase64: string[] | undefined;
+
+    const fallbackOpenAI = async (): Promise<{ content: string; tokensUsed: number }> => {
+      return this.callOpenAI(AI_PROMPTS.PAWSCAN_SYSTEM, userPrompt, {
+        model: 'gpt-5.2',
+        temperature: 0.3,
+        maxTokens: 2000,
+      });
+    };
 
     if (dto.media && dto.media.length > 0) {
-      // media may be URLs or data URLs/base64; fetchImagesAsBase64 short-circuits non-URLs
-      const mediaBase64 = await fetchImagesAsBase64(dto.media);
-      response = await this.analyzeWithImages(AI_PROMPTS.PAWSCAN_SYSTEM, userPrompt, mediaBase64);
-      modelUsed = 'gpt-4o';
+      mediaBase64 = await fetchImagesAsBase64(dto.media);
+      const visionSuffix = '\n\nIMPORTANT: Analyze the attached image for any visible symptoms, injuries, skin conditions, or abnormalities. Include observations from the image in your diagnosis. Output the complete JSON object only; do not truncate.';
+      if (this.geminiProvider.isAvailable()) {
+        try {
+          response = await this.geminiProvider.chatWithVision(
+            AI_PROMPTS.PAWSCAN_SYSTEM,
+            userPrompt + visionSuffix,
+            mediaBase64,
+            [],
+            { maxTokens: 4096, responseFormat: 'json' },
+          );
+          if (response?.content?.trim()) {
+            if (response.content.length < 400) {
+              this.logger.warn(`PawScan: Gemini response very short (${response.content.length} chars), may be truncated`);
+            }
+            modelUsed = 'gemini-3-flash-preview';
+          } else throw new Error('Empty content');
+        } catch (err) {
+          this.logger.warn(`PawScan: Gemini vision failed (${(err as Error)?.message}), falling back to gpt-5.2`);
+          response = await this.analyzeWithImages(AI_PROMPTS.PAWSCAN_SYSTEM, userPrompt, mediaBase64);
+          modelUsed = 'gpt-5.2';
+        }
+      } else {
+        response = await this.analyzeWithImages(AI_PROMPTS.PAWSCAN_SYSTEM, userPrompt, mediaBase64);
+        modelUsed = 'gpt-5.2';
+      }
     } else {
-      // Use gpt-5-mini for fast initial analysis
-      response = await this.callOpenAI(AI_PROMPTS.PAWSCAN_SYSTEM, userPrompt, {
-        model: 'gpt-5-mini',
-        temperature: 0.3,
-        maxTokens: 1000,
-      });
-      modelUsed = 'gpt-5-mini';
+      if (this.geminiProvider.isAvailable()) {
+        try {
+          response = await this.geminiProvider.chat(
+            [
+              { role: 'system', content: AI_PROMPTS.PAWSCAN_SYSTEM },
+              { role: 'user', content: userPrompt },
+            ],
+            { maxTokens: 4096, responseFormat: 'json' },
+          );
+          if (response?.content?.trim()) modelUsed = 'gemini-3-flash-preview';
+          else throw new Error('Empty content');
+        } catch (err) {
+          this.logger.warn(`PawScan: Gemini text failed (${(err as Error)?.message}), falling back to gpt-5.2`);
+          response = await fallbackOpenAI();
+          modelUsed = 'gpt-5.2';
+        }
+      } else {
+        response = await fallbackOpenAI();
+        modelUsed = 'gpt-5.2';
+      }
     }
 
-    const result = this.parseJsonResponse(response.content);
+    let result: any;
+    try {
+      result = this.parseJsonResponse(response.content);
+    } catch (parseErr) {
+      if (
+        parseErr instanceof BadRequestException &&
+        parseErr.message === 'Failed to parse AI response' &&
+        modelUsed === 'gemini-3-flash-preview'
+      ) {
+        this.logger.warn('PawScan: Gemini response failed to parse (truncated/malformed), retrying with gpt-5.2');
+        if (mediaBase64?.length) {
+          response = await this.analyzeWithImages(AI_PROMPTS.PAWSCAN_SYSTEM, userPrompt, mediaBase64);
+        } else {
+          response = await fallbackOpenAI();
+        }
+        modelUsed = 'gpt-5.2';
+        result = this.parseJsonResponse(response.content);
+      } else {
+        throw parseErr;
+      }
+    }
 
     // Check if AI needs follow-up questions
     if (result.needs_followup === true && result.follow_up_questions?.length > 0) {
@@ -164,9 +229,8 @@ export class PawscanService extends BaseAiService {
     // Build comprehensive prompt with all information
     const finalPrompt = this.buildFinalPrompt(originalAnswers, pet, followUpQuestions, followUpAnswers);
 
-    // Use gpt-4o for final analysis (smarter model for complete assessment)
     const response = await this.callOpenAI(AI_PROMPTS.PAWSCAN_FINAL, finalPrompt, {
-      model: 'gpt-4o',
+      model: 'gpt-5.2',
       temperature: 0.3,
       maxTokens: 1200,
     });
@@ -191,7 +255,7 @@ export class PawscanService extends BaseAiService {
         follow_up_answers: followUpAnswers,
         latency_ms: (session.latency_ms || 0) + (Date.now() - startTime),
         risk_flags: result.risk_flags || [],
-        model_used: 'gpt-4o', // Updated to final model
+        model_used: 'gpt-5.2',
       })
       .eq('id', sessionId);
 
@@ -214,7 +278,7 @@ export class PawscanService extends BaseAiService {
       treatment_guide: null,
       risk_flags: result.risk_flags,
       confidence_score: result.confidence_score,
-      model_used: 'gpt-4o',
+      model_used: 'gpt-5.2',
       latency_ms: Date.now() - startTime,
       cost_usd: 0,
     };
@@ -381,7 +445,7 @@ Return JSON (medications MUST have at least 1-2 items unless literally nothing e
 }`;
 
     const response = await this.callOpenAI(AI_PROMPTS.PAWSCAN_TREATMENT_SYSTEM, prompt, {
-      model: 'gpt-5-mini',
+      model: 'gpt-5.2',
       temperature: 0.5,
       maxTokens: 800,
     });
@@ -400,7 +464,7 @@ Return JSON (medications MUST have at least 1-2 items unless literally nothing e
     return {
       treatment_guide: treatmentGuide,
       latency_ms: Date.now() - startTime,
-      model_used: 'gpt-5-mini',
+      model_used: 'gpt-5.2',
     };
   }
 
@@ -422,7 +486,7 @@ ${userPrompt}
 IMPORTANT: Analyze the attached image for any visible symptoms, injuries, skin conditions, or abnormalities that may help with the assessment. Include observations from the image in your diagnosis.`;
 
     return this.openaiProvider.analyzeImage(imageUrl, fullPrompt, {
-      model: 'gpt-4o',
+      model: 'gpt-5.2',
       maxTokens: 1200,
     });
   }

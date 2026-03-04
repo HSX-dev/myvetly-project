@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { SupabaseService } from '../../../infrastructure/supabase/supabase.service';
 import { RedisService } from '../../../infrastructure/cache/redis.service';
-import { OpenaiProvider, DeepseekProvider } from '../../../infrastructure/ai-providers';
+import { OpenaiProvider, DeepseekProvider, GeminiProvider } from '../../../infrastructure/ai-providers';
 import { BaseAiService } from '../shared/base-ai.service';
 import { AI_PROMPTS, RATE_LIMITS } from '../shared/prompts.constants';
 import {
@@ -27,6 +27,7 @@ export class FoodScanService extends BaseAiService {
     redisService: RedisService,
     openaiProvider: OpenaiProvider,
     deepseekProvider: DeepseekProvider,
+    private readonly geminiProvider: GeminiProvider,
   ) {
     super(supabaseService, redisService, openaiProvider, deepseekProvider);
   }
@@ -53,15 +54,15 @@ export class FoodScanService extends BaseAiService {
     const userPrompt = this.buildUserPrompt(dto, pet);
 
     // Call AI - use GPT-4o for vision if images provided, otherwise GPT-4o-mini
-    let response;
+    let response: { content: string; tokensUsed: number } | undefined;
     let modelUsed: string;
+    let imageBase64: string[] | undefined; // in scope for parse-failure retry
 
     const hasBase64 = dto.image_base64 && dto.image_base64.length > 0;
     const hasUrls = dto.image_urls && dto.image_urls.length > 0;
 
     if (hasBase64 || hasUrls) {
       // Prefer base64 if provided (avoids extra fetch), otherwise fetch from URLs
-      let imageBase64: string[];
       if (hasBase64) {
         imageBase64 = dto.image_base64!.map((b64) =>
           b64.startsWith('data:') ? b64 : `data:image/jpeg;base64,${b64}`,
@@ -71,33 +72,122 @@ export class FoodScanService extends BaseAiService {
         imageBase64 = await fetchImagesAsBase64(dto.image_urls!);
       }
 
-      response = await this.analyzeWithImages(
-        AI_PROMPTS.FOOD_SCAN_SYSTEM,
-        userPrompt,
-        imageBase64,
-        'gpt-5-mini',
-      );
-      modelUsed = 'gpt-5-mini';
+      if (this.geminiProvider.isAvailable()) {
+        try {
+          this.logger.debug('FoodScan: using Gemini vision (fast path)');
+          const fullPrompt = `${userPrompt}
+
+IMPORTANT: Analyze the attached image(s) to identify the food item or ingredient label. Be specific about what you see.
+Output the complete JSON object only. Do not truncate—include all required fields (ingredients, toxic_ingredients, pawmd_score, recommended_serving, warnings, etc.) in a single response.`;
+          response = await this.geminiProvider.chatWithVision(
+            AI_PROMPTS.FOOD_SCAN_SYSTEM,
+            fullPrompt,
+            imageBase64,
+            [],
+            { maxTokens: 4096, temperature: 0.3, responseFormat: 'json' },
+          );
+          if (response?.content?.trim()) {
+            if (response.content.length < 400) {
+              this.logger.warn(`FoodScan: Gemini response very short (${response.content.length} chars), may be truncated`);
+            }
+            modelUsed = 'gemini-3-flash-preview';
+          } else throw new Error('Empty content');
+        } catch (err) {
+          this.logger.warn(`FoodScan: Gemini vision failed (${(err as Error)?.message}), falling back to gpt-4o (slower)`);
+          response = await this.analyzeWithImages(
+            AI_PROMPTS.FOOD_SCAN_SYSTEM,
+            userPrompt,
+            imageBase64,
+            'gpt-4o',
+          );
+          modelUsed = 'gpt-4o';
+        }
+      } else {
+        this.logger.debug('FoodScan: Gemini not configured (GEMINI_API_KEY?), using gpt-4o vision (slower)');
+        response = await this.analyzeWithImages(
+          AI_PROMPTS.FOOD_SCAN_SYSTEM,
+          userPrompt,
+          imageBase64,
+          'gpt-4o',
+        );
+        modelUsed = 'gpt-4o';
+      }
     } else {
-      // Use gpt-5-mini for text-only analysis
-      const textOptions: { temperature: number; maxTokens: number; responseFormat: 'json'; model: string } = {
-        temperature: 0.3,
-        maxTokens: 1400,
-        responseFormat: 'json',
-        model: 'gpt-5-mini',
-      };
-      response = await this.callOpenAI(AI_PROMPTS.FOOD_SCAN_SYSTEM, userPrompt, textOptions);
-      modelUsed = 'gpt-5-mini';
+      // Text-only: try Gemini first, then gpt-5-mini
+      if (this.geminiProvider.isAvailable()) {
+        try {
+          response = await this.geminiProvider.chat(
+            [
+              { role: 'system', content: AI_PROMPTS.FOOD_SCAN_SYSTEM },
+              { role: 'user', content: userPrompt },
+            ],
+            { maxTokens: 1400, responseFormat: 'json' },
+          );
+          if (response?.content?.trim()) modelUsed = 'gemini-3-flash-preview';
+          else throw new Error('Empty content');
+        } catch (err) {
+          this.logger.warn(`FoodScan: Gemini text failed (${(err as Error)?.message}), falling back to gpt-5-mini`);
+          response = await this.callOpenAI(AI_PROMPTS.FOOD_SCAN_SYSTEM, userPrompt, {
+            temperature: 0.3,
+            maxTokens: 1400,
+            responseFormat: 'json',
+            model: 'gpt-5-mini',
+          });
+          modelUsed = 'gpt-5-mini';
+        }
+      } else {
+        response = await this.callOpenAI(AI_PROMPTS.FOOD_SCAN_SYSTEM, userPrompt, {
+          temperature: 0.3,
+          maxTokens: 1400,
+          responseFormat: 'json',
+          model: 'gpt-5-mini',
+        });
+        modelUsed = 'gpt-5-mini';
+      }
     }
 
     const latency = Date.now() - startTime;
     if (!response?.content?.trim()) {
-      this.logger.warn('FoodScan: AI returned empty content (gpt-5-mini may have used tokens on reasoning)');
+      this.logger.warn('FoodScan: AI returned empty content');
       throw new BadRequestException(
         'Analysis returned no result. Please try again or use a clearer image of the ingredient label.',
       );
     }
-    const result = this.parseJsonResponse<FoodScanAnalysis>(response.content);
+
+    let result: FoodScanAnalysis;
+    try {
+      result = this.parseJsonResponse<FoodScanAnalysis>(response.content);
+    } catch (parseErr) {
+      if (
+        parseErr instanceof BadRequestException &&
+        parseErr.message === 'Failed to parse AI response' &&
+        modelUsed === 'gemini-3-flash-preview'
+      ) {
+        if (imageBase64?.length) {
+          this.logger.warn('FoodScan: Gemini response failed to parse (truncated/malformed), retrying with gpt-4o');
+          response = await this.analyzeWithImages(
+            AI_PROMPTS.FOOD_SCAN_SYSTEM,
+            userPrompt,
+            imageBase64,
+            'gpt-4o',
+          );
+          modelUsed = 'gpt-4o';
+          result = this.parseJsonResponse<FoodScanAnalysis>(response.content);
+        } else {
+          this.logger.warn('FoodScan: Gemini response failed to parse, retrying with gpt-5-mini');
+          response = await this.callOpenAI(AI_PROMPTS.FOOD_SCAN_SYSTEM, userPrompt, {
+            temperature: 0.3,
+            maxTokens: 2000,
+            responseFormat: 'json',
+            model: 'gpt-5-mini',
+          });
+          modelUsed = 'gpt-5-mini';
+          result = this.parseJsonResponse<FoodScanAnalysis>(response.content);
+        }
+      } else {
+        throw parseErr;
+      }
+    }
 
     // Enforce: toxic_ingredients and severity drive score, recommendation, and risk (single source of truth)
     this.enforceToxicityConsistency(result);
@@ -173,7 +263,7 @@ export class FoodScanService extends BaseAiService {
     systemPrompt: string,
     userPrompt: string,
     images: string[], // base64 data URLs or URLs
-    model: string = 'gpt-5-mini',
+    model: string = 'gpt-4o',
   ): Promise<{ content: string; tokensUsed: number }> {
     const fullPrompt = `${userPrompt}
 
@@ -187,7 +277,7 @@ IMPORTANT: Analyze the attached image(s) to identify the food item or ingredient
       [],
       {
         model,
-        maxTokens: 8192,
+        maxTokens: 1400,
         temperature: 0.3,
         responseFormat: 'json',
       },
@@ -331,14 +421,15 @@ IMPORTANT: Analyze the attached image(s) to identify the food item or ingredient
    * Calculate cost based on tokens used
    */
   private calculateCost(tokensUsed: number, model: string): number {
+    if (model === 'gemini-3-flash-preview') {
+      return parseFloat(((tokensUsed / 1000) * 0.0001).toFixed(6));
+    }
     if (model === 'gpt-4o') {
       return parseFloat(((tokensUsed / 1000) * 0.01).toFixed(6));
     }
-    // gpt-5-mini: lower cost than nano
     if (model === 'gpt-5-mini') {
       return parseFloat(((tokensUsed / 1000) * 0.0002).toFixed(6));
     }
-    // gpt-5-mini fallback
     return parseFloat(((tokensUsed / 1000) * 0.0004).toFixed(6));
   }
 

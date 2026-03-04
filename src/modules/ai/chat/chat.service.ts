@@ -276,7 +276,7 @@ export class ChatService extends BaseAiService {
   /**
    * Call AI with fallback logic
    * - Images: Try GPT-4o, fallback to DeepSeek text-only
-   * - No images: Use DeepSeek directly
+   * - No images: Use gpt-5-mini
    */
   private async callWithFallback(
     systemPrompt: string,
@@ -325,16 +325,17 @@ export class ChatService extends BaseAiService {
       }
     }
 
-    // No images: Use DeepSeek directly
-    const response = await this.callDeepSeekWithHistory(
+    // No images: Use gpt-5-mini
+    const response = await this.openaiProvider.chatWithHistory(
       systemPrompt,
       userMessage,
       chatHistory,
+      { model: 'gpt-5-mini', temperature: 0.7, maxTokens: 4000 },
     );
     return {
       content: response.content,
       tokensUsed: response.tokensUsed,
-      model: 'deepseek-chat',
+      model: 'gpt-5-mini',
       usedFallback: false,
     };
   }
