@@ -176,9 +176,10 @@ export class AuthGuard implements CanActivate {
         throw new UnauthorizedException('Token expired');
       }
 
-      // Attach user info to request
+      // Attach user info to request (sub = JWT subject = auth user id for AI controllers)
       request.user = {
         id: authUserId,
+        sub: authUserId,
         email: userEmail || userProfile.email,
         auth_user_id: authUserId,
         user_id: userProfile.id,

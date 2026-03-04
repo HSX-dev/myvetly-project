@@ -12,7 +12,7 @@ import { HealthhubService } from './healthhub/healthhub.service';
 import { SoapService } from './soap/soap.service';
 
 // Infrastructure
-import { OpenaiProvider, DeepseekProvider } from '../../infrastructure/ai-providers';
+import { OpenaiProvider, DeepseekProvider, GeminiProvider } from '../../infrastructure/ai-providers';
 
 // Shared modules
 import { SupabaseModule } from '../../infrastructure/supabase/supabase.module';
@@ -25,6 +25,7 @@ import { CacheModule } from '../../infrastructure/cache/cache.module';
     // AI Providers
     OpenaiProvider,
     DeepseekProvider,
+    GeminiProvider,
     // Domain Services
     ChatService,
     PawscanService,
