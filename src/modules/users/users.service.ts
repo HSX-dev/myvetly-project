@@ -5,7 +5,7 @@ import { UserContext } from '../auth/auth.guard';
 
 @Injectable()
 export class UsersService {
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(private supabaseService: SupabaseService) { }
 
   /**
    * Get all users with RLS filtering based on user role
@@ -304,187 +304,188 @@ export class UsersService {
       }
     } else {
       // Clinic admin and below can only create users in their clinic
-      if (createUserDto.organization_id !== user.organization_id || 
-          createUserDto.clinic_id !== user.clinic_id) {
+      if (createUserDto.organization_id !== user.organization_id ||
+        createUserDto.clinic_id !== user.clinic_id) {
         throw new ForbiddenException('Access denied: Cannot create users outside your clinic');
       }
     }
 
-    // Handle name fields - construct full_name if not provided (matching original Edge Function behavior)
-    const updateData = { ...createUserDto };
-    if (!updateData.full_name && (updateData.first_name || updateData.last_name)) {
-      // Match original Edge Function: [first_name, last_name].filter(Boolean).join(' ').trim()
-      const nameParts = [updateData.first_name, updateData.last_name].filter(Boolean);
-      updateData.full_name = nameParts.length > 0 ? nameParts.join(' ').trim() : undefined;
-    } else if (updateData.full_name && (!updateData.first_name || !updateData.last_name)) {
-      // Split full_name if first_name/last_name not provided
-      const nameParts = updateData.full_name.trim().split(' ');
-      if (nameParts.length >= 2) {
-        updateData.first_name = nameParts[0];
-        updateData.last_name = nameParts.slice(1).join(' ');
-      } else if (nameParts.length === 1) {
-        updateData.first_name = nameParts[0];
-        updateData.last_name = '';
-      }
-    }
-
-    // Step 1: Create auth user using Supabase Admin API
-    let authUserId: string;
-    let alreadyExisted = false;
-
     try {
-      // Try to create new auth user
-      // If user already exists, we'll catch the error and handle it
-      const { data: newAuthUser, error: authError } = await this.supabaseService
-        .getClient()
-        .auth.admin.createUser({
-          email: createUserDto.email,
-          password: createUserDto.password || undefined,
-          email_confirm: !createUserDto.inviteOnly, // Auto-confirm if password provided
-          user_metadata: {
-            first_name: updateData.first_name,
-            last_name: updateData.last_name,
-          },
-        });
+      // Handle name fields - construct full_name if not provided (matching original Edge Function behavior)
+      const updateData = { ...createUserDto };
+      if (!updateData.full_name && (updateData.first_name || updateData.last_name)) {
+        // Match original Edge Function: [first_name, last_name].filter(Boolean).join(' ').trim()
+        const nameParts = [updateData.first_name, updateData.last_name].filter(Boolean);
+        updateData.full_name = nameParts.length > 0 ? nameParts.join(' ').trim() : undefined;
+      } else if (updateData.full_name && (!updateData.first_name || !updateData.last_name)) {
+        // Split full_name if first_name/last_name not provided
+        const nameParts = updateData.full_name.trim().split(' ');
+        if (nameParts.length >= 2) {
+          updateData.first_name = nameParts[0];
+          updateData.last_name = nameParts.slice(1).join(' ');
+        } else if (nameParts.length === 1) {
+          updateData.first_name = nameParts[0];
+          updateData.last_name = '';
+        }
+      }
 
-      if (authError) {
-        // Check if error is due to user already existing
-        const errorMessage = authError.message?.toLowerCase() || '';
-        const isDuplicateEmail = 
-          errorMessage.includes('already registered') || 
-          errorMessage.includes('already exists') ||
-          errorMessage.includes('user already registered') ||
-          errorMessage.includes('email address has already been registered') ||
-          errorMessage.includes('duplicate') ||
-          authError.status === 422; // Supabase returns 422 for duplicate emails
+      // Step 1: Create auth user using Supabase Admin API
+      let authUserId: string;
+      let alreadyExisted = false;
 
-        if (isDuplicateEmail) {
-          // Check if user already exists in users table
-          const { data: existingUserRecord } = await this.supabaseService
-            .getClient()
-            .from('users')
-            .select('id, email, role, status, clinic_id, organization_id, auth_user_id')
-            .eq('email', createUserDto.email)
-            .neq('role', 'client') // Exclude clients
-            .maybeSingle();
+      try {
+        // Try to create new auth user
+        // If user already exists, we'll catch the error and handle it
+        const { data: newAuthUser, error: authError } = await this.supabaseService
+          .getClient()
+          .auth.admin.createUser({
+            email: createUserDto.email,
+            password: createUserDto.password || undefined,
+            email_confirm: !createUserDto.inviteOnly, // Auto-confirm if password provided
+            user_metadata: {
+              first_name: updateData.first_name,
+              last_name: updateData.last_name,
+            },
+          });
 
-          if (existingUserRecord) {
-            // Check if user is complete and active (matching original frontend logic)
-            const isCompleteActiveUser = 
-              existingUserRecord.role && 
-              existingUserRecord.clinic_id && 
-              existingUserRecord.status === 'active' && 
-              existingUserRecord.auth_user_id;
-            
-            if (isCompleteActiveUser) {
-              // User already exists and is complete/active - return 409 Conflict
-              throw new ConflictException(
-                `A user with email ${createUserDto.email} already exists in the system`,
-              );
-            }
-            // If user is incomplete or inactive, continue to update it
-          }
+        if (authError) {
+          // Check if error is due to user already existing
+          const errorMessage = authError.message?.toLowerCase() || '';
+          const isDuplicateEmail =
+            errorMessage.includes('already registered') ||
+            errorMessage.includes('already exists') ||
+            errorMessage.includes('user already registered') ||
+            errorMessage.includes('email address has already been registered') ||
+            errorMessage.includes('duplicate') ||
+            authError.status === 422; // Supabase returns 422 for duplicate emails
 
-          // User already exists, try to get their ID by attempting to invite them
-          // This will return the existing user
-          const { data: existingUserData, error: inviteError } = await this.supabaseService
-            .getClient()
-            .auth.admin.inviteUserByEmail(createUserDto.email);
-
-          if (inviteError || !existingUserData?.user?.id) {
-            // If we can't get the user, try listing users (with pagination for efficiency)
-            const { data: usersList } = await this.supabaseService
+          if (isDuplicateEmail) {
+            // Check if user already exists in users table
+            const { data: existingUserRecord } = await this.supabaseService
               .getClient()
-              .auth.admin.listUsers({ page: 1, perPage: 1000 });
+              .from('users')
+              .select('id, email, role, status, clinic_id, organization_id, auth_user_id')
+              .eq('email', createUserDto.email)
+              .neq('role', 'client') // Exclude clients
+              .maybeSingle();
 
-            const existingUser = usersList?.users?.find(
-              (u: any) => u.email === createUserDto.email,
-            );
+            if (existingUserRecord) {
+              // Check if user is complete and active (matching original frontend logic)
+              const isCompleteActiveUser =
+                existingUserRecord.role &&
+                existingUserRecord.clinic_id &&
+                existingUserRecord.status === 'active' &&
+                existingUserRecord.auth_user_id;
 
-            if (existingUser) {
-              authUserId = existingUser.id;
+              if (isCompleteActiveUser) {
+                // User already exists and is complete/active - return 409 Conflict
+                throw new ConflictException(
+                  `A user with email ${createUserDto.email} already exists in the system`,
+                );
+              }
+              // If user is incomplete or inactive, continue to update it
+            }
+
+            // User already exists, try to get their ID by attempting to invite them
+            // This will return the existing user
+            const { data: existingUserData, error: inviteError } = await this.supabaseService
+              .getClient()
+              .auth.admin.inviteUserByEmail(createUserDto.email);
+
+            if (inviteError || !existingUserData?.user?.id) {
+              // If we can't get the user, try listing users (with pagination for efficiency)
+              const { data: usersList } = await this.supabaseService
+                .getClient()
+                .auth.admin.listUsers({ page: 1, perPage: 1000 });
+
+              const existingUser = usersList?.users?.find(
+                (u: any) => u.email === createUserDto.email,
+              );
+
+              if (existingUser) {
+                authUserId = existingUser.id;
+                alreadyExisted = true;
+                console.log('Auth user already exists:', authUserId);
+              } else {
+                // If we can't find the user but they exist, return 409 Conflict
+                throw new ConflictException(
+                  `A user with email ${createUserDto.email} already exists`,
+                );
+              }
+            } else {
+              authUserId = existingUserData.user.id;
               alreadyExisted = true;
               console.log('Auth user already exists:', authUserId);
-            } else {
-              // If we can't find the user but they exist, return 409 Conflict
-              throw new ConflictException(
-                `A user with email ${createUserDto.email} already exists`,
-              );
             }
           } else {
-            authUserId = existingUserData.user.id;
-            alreadyExisted = true;
-            console.log('Auth user already exists:', authUserId);
+            // For other auth errors, check if they're client errors (4xx) or server errors (5xx)
+            // Invalid email format, missing required fields, etc. should be 400 Bad Request
+            if (authError.status && authError.status >= 400 && authError.status < 500) {
+              throw new BadRequestException(
+                `Failed to create auth user: ${authError.message}`,
+              );
+            } else {
+              // Only throw 500 for actual server errors
+              throw new InternalServerErrorException(
+                `Failed to create auth user: ${authError.message}`,
+              );
+            }
           }
         } else {
-          // For other auth errors, check if they're client errors (4xx) or server errors (5xx)
-          // Invalid email format, missing required fields, etc. should be 400 Bad Request
-          if (authError.status && authError.status >= 400 && authError.status < 500) {
-            throw new BadRequestException(
-              `Failed to create auth user: ${authError.message}`,
-            );
-          } else {
-            // Only throw 500 for actual server errors
-            throw new InternalServerErrorException(
-              `Failed to create auth user: ${authError.message}`,
-            );
+          // User created successfully
+          if (!newAuthUser?.user?.id) {
+            throw new InternalServerErrorException('Failed to create auth user: No user ID returned');
+          }
+
+          authUserId = newAuthUser.user.id;
+
+          // Send invitation email if inviteOnly is true
+          if (createUserDto.inviteOnly && !createUserDto.password) {
+            // Use inviteUserByEmail to send invitation email
+            const { data: inviteData, error: inviteError } = await this.supabaseService
+              .getClient()
+              .auth.admin.inviteUserByEmail(createUserDto.email, {
+                data: {
+                  first_name: updateData.first_name,
+                  last_name: updateData.last_name,
+                },
+              });
+
+            if (inviteError) {
+              console.warn('Failed to send invitation email:', inviteError);
+              // Don't throw - user was created successfully, email can be sent later
+            } else {
+              console.log('Invitation email sent successfully');
+            }
           }
         }
-      } else {
-        // User created successfully
-        if (!newAuthUser?.user?.id) {
-          throw new InternalServerErrorException('Failed to create auth user: No user ID returned');
-        }
-
-        authUserId = newAuthUser.user.id;
-
-        // Send invitation email if inviteOnly is true
-        if (createUserDto.inviteOnly && !createUserDto.password) {
-          // Use inviteUserByEmail to send invitation email
-          const { data: inviteData, error: inviteError } = await this.supabaseService
-            .getClient()
-            .auth.admin.inviteUserByEmail(createUserDto.email, {
-              data: {
-                first_name: updateData.first_name,
-                last_name: updateData.last_name,
-              },
-            });
-
-          if (inviteError) {
-            console.warn('Failed to send invitation email:', inviteError);
-            // Don't throw - user was created successfully, email can be sent later
-          } else {
-            console.log('Invitation email sent successfully');
-          }
-        }
-      }
-    } catch (error: any) {
-      console.error('Error creating auth user:', error);
-      // Preserve HTTP exceptions (4xx, 5xx) - don't convert them
-      if (error instanceof ConflictException || 
-          error instanceof BadRequestException || 
+      } catch (error: any) {
+        console.error('Error creating auth user:', error);
+        // Preserve HTTP exceptions (4xx, 5xx) - don't convert them
+        if (error instanceof ConflictException ||
+          error instanceof BadRequestException ||
           error instanceof ForbiddenException ||
           error instanceof NotFoundException ||
           error instanceof InternalServerErrorException) {
-        throw error;
-      }
-      // For unknown errors, check if they're client errors based on status code
-      if (error?.status && error.status >= 400 && error.status < 500) {
-        throw new BadRequestException(
+          throw error;
+        }
+        // For unknown errors, check if they're client errors based on status code
+        if (error?.status && error.status >= 400 && error.status < 500) {
+          throw new BadRequestException(
+            `Failed to create auth user: ${error.message || 'Unknown error'}`,
+          );
+        }
+        // Only throw 500 for actual server errors
+        throw new InternalServerErrorException(
           `Failed to create auth user: ${error.message || 'Unknown error'}`,
         );
       }
-      // Only throw 500 for actual server errors
-      throw new InternalServerErrorException(
-        `Failed to create auth user: ${error.message || 'Unknown error'}`,
-      );
-    }
 
-    // Step 2: Check if user record already exists in users table
-    const { data: existingUserRecord, error: checkError } = await this.supabaseService
-      .getClient()
-      .from('users')
-      .select(`
+      // Step 2: Check if user record already exists in users table
+      const { data: existingUserRecord, error: checkError } = await this.supabaseService
+        .getClient()
+        .from('users')
+        .select(`
         id,
         auth_user_id,
         email,
@@ -503,92 +504,92 @@ export class UsersService {
         organizations!users_organization_id_fkey(id, name),
         clinics!users_clinic_id_fkey(id, name)
       `)
-      .eq('auth_user_id', authUserId)
-      .single();
+        .eq('auth_user_id', authUserId)
+        .single();
 
-    if (existingUserRecord) {
-      // User record already exists
-      console.log('User record already exists:', existingUserRecord.id);
-      
-      // Check if user is complete and active (matching original frontend logic)
-      // If user is complete/active, return 409 Conflict instead of updating
-      const isCompleteActiveUser = 
-        existingUserRecord.role && 
-        existingUserRecord.clinic_id && 
-        existingUserRecord.status === 'active' && 
-        existingUserRecord.auth_user_id;
-      
-      if (isCompleteActiveUser) {
-        // User already exists and is complete/active - return 409 Conflict
-        throw new ConflictException(
-          `A user with email ${createUserDto.email} already exists in the system`,
-        );
-      }
-      
-      // User exists but is incomplete or inactive - update it
-      // Update name fields if provided in request and they differ from existing record
-      const needsUpdate: any = {};
-      if (updateData.first_name && updateData.first_name !== existingUserRecord.first_name) {
-        needsUpdate.first_name = updateData.first_name;
-      }
-      if (updateData.last_name && updateData.last_name !== existingUserRecord.last_name) {
-        needsUpdate.last_name = updateData.last_name;
-      }
-      
-      // Reconstruct full_name from first_name and last_name (matching original Edge Function behavior)
-      const finalFirstName = needsUpdate.first_name || existingUserRecord.first_name || updateData.first_name;
-      const finalLastName = needsUpdate.last_name || existingUserRecord.last_name || updateData.last_name;
-      const nameParts = [finalFirstName, finalLastName].filter(Boolean);
-      const constructedFullName = nameParts.length > 0 ? nameParts.join(' ').trim() : undefined;
-      
-      if (constructedFullName && constructedFullName !== existingUserRecord.full_name) {
-        needsUpdate.full_name = constructedFullName;
-      }
-      
-      // Update timezone if provided and different
-      if (updateData.timezone && updateData.timezone !== existingUserRecord.timezone) {
-        needsUpdate.timezone = updateData.timezone;
-      }
-      
-      // Update role_id and role_name if provided
-      if (updateData.role_id !== undefined && updateData.role_id !== existingUserRecord.role_id) {
-        needsUpdate.role_id = updateData.role_id;
-      }
-      if (updateData.role_name !== undefined && updateData.role_name !== existingUserRecord.role_name) {
-        needsUpdate.role_name = updateData.role_name;
-      }
-      
-      // Update clinic_id and organization_id if provided and different (important for user to show in list)
-      if (updateData.clinic_id !== undefined && updateData.clinic_id !== existingUserRecord.clinic_id) {
-        needsUpdate.clinic_id = updateData.clinic_id;
-      }
-      if (updateData.organization_id !== undefined && updateData.organization_id !== existingUserRecord.organization_id) {
-        needsUpdate.organization_id = updateData.organization_id;
-      }
-      
-      // Update role if provided and different
-      if (updateData.role && updateData.role !== existingUserRecord.role) {
-        needsUpdate.role = updateData.role;
-      }
-      
-      // Update status if provided and different
-      if (updateData.status && updateData.status !== existingUserRecord.status) {
-        needsUpdate.status = updateData.status;
-      }
-      
-      // Always update auth_user_id if it's missing or different
-      if (!existingUserRecord.auth_user_id || existingUserRecord.auth_user_id !== authUserId) {
-        needsUpdate.auth_user_id = authUserId;
-      }
-      
-      // Update the record if there are changes
-      if (Object.keys(needsUpdate).length > 0) {
-        const { data: updatedRecord, error: updateError } = await this.supabaseService
-          .getWriteClient(user.access_token)
-          .from('users')
-          .update(needsUpdate)
-          .eq('id', existingUserRecord.id)
-          .select(`
+      if (existingUserRecord) {
+        // User record already exists
+        console.log('User record already exists:', existingUserRecord.id);
+
+        // Check if user is complete and active (matching original frontend logic)
+        // If user is complete/active, return 409 Conflict instead of updating
+        const isCompleteActiveUser =
+          existingUserRecord.role &&
+          existingUserRecord.clinic_id &&
+          existingUserRecord.status === 'active' &&
+          existingUserRecord.auth_user_id;
+
+        if (isCompleteActiveUser) {
+          // User already exists and is complete/active - return 409 Conflict
+          throw new ConflictException(
+            `A user with email ${createUserDto.email} already exists in the system`,
+          );
+        }
+
+        // User exists but is incomplete or inactive - update it
+        // Update name fields if provided in request and they differ from existing record
+        const needsUpdate: any = {};
+        if (updateData.first_name && updateData.first_name !== existingUserRecord.first_name) {
+          needsUpdate.first_name = updateData.first_name;
+        }
+        if (updateData.last_name && updateData.last_name !== existingUserRecord.last_name) {
+          needsUpdate.last_name = updateData.last_name;
+        }
+
+        // Reconstruct full_name from first_name and last_name (matching original Edge Function behavior)
+        const finalFirstName = needsUpdate.first_name || existingUserRecord.first_name || updateData.first_name;
+        const finalLastName = needsUpdate.last_name || existingUserRecord.last_name || updateData.last_name;
+        const nameParts = [finalFirstName, finalLastName].filter(Boolean);
+        const constructedFullName = nameParts.length > 0 ? nameParts.join(' ').trim() : undefined;
+
+        if (constructedFullName && constructedFullName !== existingUserRecord.full_name) {
+          needsUpdate.full_name = constructedFullName;
+        }
+
+        // Update timezone if provided and different
+        if (updateData.timezone && updateData.timezone !== existingUserRecord.timezone) {
+          needsUpdate.timezone = updateData.timezone;
+        }
+
+        // Update role_id and role_name if provided
+        if (updateData.role_id !== undefined && updateData.role_id !== existingUserRecord.role_id) {
+          needsUpdate.role_id = updateData.role_id;
+        }
+        if (updateData.role_name !== undefined && updateData.role_name !== existingUserRecord.role_name) {
+          needsUpdate.role_name = updateData.role_name;
+        }
+
+        // Update clinic_id and organization_id if provided and different (important for user to show in list)
+        if (updateData.clinic_id !== undefined && updateData.clinic_id !== existingUserRecord.clinic_id) {
+          needsUpdate.clinic_id = updateData.clinic_id;
+        }
+        if (updateData.organization_id !== undefined && updateData.organization_id !== existingUserRecord.organization_id) {
+          needsUpdate.organization_id = updateData.organization_id;
+        }
+
+        // Update role if provided and different
+        if (updateData.role && updateData.role !== existingUserRecord.role) {
+          needsUpdate.role = updateData.role;
+        }
+
+        // Update status if provided and different
+        if (updateData.status && updateData.status !== existingUserRecord.status) {
+          needsUpdate.status = updateData.status;
+        }
+
+        // Always update auth_user_id if it's missing or different
+        if (!existingUserRecord.auth_user_id || existingUserRecord.auth_user_id !== authUserId) {
+          needsUpdate.auth_user_id = authUserId;
+        }
+
+        // Update the record if there are changes (use service role - permission already validated above)
+        if (Object.keys(needsUpdate).length > 0) {
+          const { data: updatedRecord, error: updateError } = await this.supabaseService
+            .getClient()
+            .from('users')
+            .update(needsUpdate)
+            .eq('id', existingUserRecord.id)
+            .select(`
             id,
             auth_user_id,
             email,
@@ -606,49 +607,49 @@ export class UsersService {
             organizations!users_organization_id_fkey(id, name),
             clinics!users_clinic_id_fkey(id, name)
           `)
-          .single();
-        
-        if (updateError) {
-          console.warn('Failed to update existing user record:', updateError);
-          throw new InternalServerErrorException(
-            `Failed to update existing user record: ${updateError.message}`,
-          );
-        } else if (updatedRecord) {
-          return {
-            ...updatedRecord,
-            already_existed: true,
-            auth_user_id: authUserId,
-          };
+            .single();
+
+          if (updateError) {
+            console.warn('Failed to update existing user record:', updateError);
+            throw new InternalServerErrorException(
+              `Failed to update existing user record: ${updateError.message}`,
+            );
+          } else if (updatedRecord) {
+            return {
+              ...updatedRecord,
+              already_existed: true,
+              auth_user_id: authUserId,
+            };
+          }
         }
+
+        // Return existing record with corrected full_name in response if it was wrong
+        const responseFullName = constructedFullName || existingUserRecord.full_name;
+
+        return {
+          ...existingUserRecord,
+          full_name: responseFullName,
+          already_existed: true,
+          auth_user_id: authUserId,
+        };
       }
-      
-      // Return existing record with corrected full_name in response if it was wrong
-      const responseFullName = constructedFullName || existingUserRecord.full_name;
-      
-      return {
-        ...existingUserRecord,
-        full_name: responseFullName,
-        already_existed: true,
+
+      // Step 3: Create user record in users table (only if it doesn't exist)
+      // Explicitly exclude password and inviteOnly (these are not database columns)
+      // Note: confirm_password is not in updateData, so we only exclude password and inviteOnly
+      const { password, inviteOnly, ...userRecordData } = updateData;
+
+      const finalUserRecordData = {
+        ...userRecordData,
         auth_user_id: authUserId,
+        has_set_password: !!createUserDto.password,
       };
-    }
 
-    // Step 3: Create user record in users table (only if it doesn't exist)
-    // Explicitly exclude password and inviteOnly (these are not database columns)
-    // Note: confirm_password is not in updateData, so we only exclude password and inviteOnly
-    const { password, inviteOnly, ...userRecordData } = updateData;
-    
-    const finalUserRecordData = {
-      ...userRecordData,
-      auth_user_id: authUserId,
-      has_set_password: !!createUserDto.password,
-    };
-
-    const { data, error } = await this.supabaseService
-      .getWriteClient(user.access_token)
-      .from('users')
-      .insert(finalUserRecordData)
-      .select(`
+      const { data, error } = await this.supabaseService
+        .getClient()
+        .from('users')
+        .insert(finalUserRecordData)
+        .select(`
         id,
         auth_user_id,
         email,
@@ -666,25 +667,25 @@ export class UsersService {
         organizations!users_organization_id_fkey(id, name),
         clinics!users_clinic_id_fkey(id, name)
       `)
-      .single();
+        .single();
 
-    if (error) {
-      console.error('Error creating user record:', error);
-      
-      // Check if error is due to duplicate email
-      if (error.code === '23505' && (error.message?.includes('email') || error.message?.includes('users_email_key'))) {
-        throw new ConflictException(
-          `A user with email ${createUserDto.email} already exists in the system`,
-        );
-      }
-      
-      // Check if error is due to duplicate key (race condition)
-      if (error.code === '23505' && error.message?.includes('auth_user_id')) {
-        // User record was created by another request, fetch it
-        const { data: raceConditionUser } = await this.supabaseService
-          .getClient()
-          .from('users')
-          .select(`
+      if (error) {
+        console.error('Error creating user record:', error);
+
+        // Check if error is due to duplicate email
+        if (error.code === '23505' && (error.message?.includes('email') || error.message?.includes('users_email_key'))) {
+          throw new ConflictException(
+            `A user with email ${createUserDto.email} already exists in the system`,
+          );
+        }
+
+        // Check if error is due to duplicate key (race condition)
+        if (error.code === '23505' && error.message?.includes('auth_user_id')) {
+          // User record was created by another request, fetch it
+          const { data: raceConditionUser } = await this.supabaseService
+            .getClient()
+            .from('users')
+            .select(`
             id,
             auth_user_id,
             email,
@@ -702,36 +703,51 @@ export class UsersService {
             organizations!users_organization_id_fkey(id, name),
             clinics!users_clinic_id_fkey(id, name)
           `)
-          .eq('auth_user_id', authUserId)
-          .single();
+            .eq('auth_user_id', authUserId)
+            .single();
 
-        if (raceConditionUser) {
-          return {
-            ...raceConditionUser,
-            already_existed: true,
-            auth_user_id: authUserId,
-          };
+          if (raceConditionUser) {
+            return {
+              ...raceConditionUser,
+              already_existed: true,
+              auth_user_id: authUserId,
+            };
+          }
         }
+
+        // If user record creation fails, try to clean up auth user (optional)
+        if (!alreadyExisted) {
+          try {
+            await this.supabaseService.getClient().auth.admin.deleteUser(authUserId);
+          } catch (cleanupError) {
+            console.error('Failed to cleanup auth user:', cleanupError);
+          }
+        }
+        throw new InternalServerErrorException(
+          `Failed to create user record: ${error.message || 'Unknown error'}`,
+        );
       }
 
-      // If user record creation fails, try to clean up auth user (optional)
-      if (!alreadyExisted) {
-        try {
-          await this.supabaseService.getClient().auth.admin.deleteUser(authUserId);
-        } catch (cleanupError) {
-          console.error('Failed to cleanup auth user:', cleanupError);
-        }
+      return {
+        ...data,
+        already_existed: alreadyExisted,
+        auth_user_id: authUserId,
+      };
+    } catch (error: any) {
+      // Re-throw HTTP exceptions so frontend gets correct status and message
+      if (
+        error instanceof ConflictException ||
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException ||
+        error instanceof NotFoundException ||
+        error instanceof InternalServerErrorException
+      ) {
+        throw error;
       }
-      throw new InternalServerErrorException(
-        `Failed to create user record: ${error.message || 'Unknown error'}`,
-      );
+      // For any other error, return 500 with the actual message so the frontend can show it
+      const message = error?.message || error?.toString?.() || 'Failed to create user';
+      throw new InternalServerErrorException(message);
     }
-
-    return {
-      ...data,
-      already_existed: alreadyExisted,
-      auth_user_id: authUserId,
-    };
   }
 
   /**
@@ -752,8 +768,8 @@ export class UsersService {
       }
     } else {
       // Clinic admin and below can only update users in their clinic
-      if (targetUser.organization_id !== user.organization_id || 
-          targetUser.clinic_id !== user.clinic_id) {
+      if (targetUser.organization_id !== user.organization_id ||
+        targetUser.clinic_id !== user.clinic_id) {
         throw new ForbiddenException('Access denied: Cannot update users outside your clinic');
       }
     }
@@ -761,11 +777,11 @@ export class UsersService {
     // Handle name fields - construct full_name if first_name/last_name are updated
     const updateData = { ...updateUserDto };
     if (updateData.first_name !== undefined || updateData.last_name !== undefined) {
-      const finalFirstName = updateData.first_name !== undefined 
-        ? updateData.first_name 
+      const finalFirstName = updateData.first_name !== undefined
+        ? updateData.first_name
         : targetUser.first_name || '';
-      const finalLastName = updateData.last_name !== undefined 
-        ? updateData.last_name 
+      const finalLastName = updateData.last_name !== undefined
+        ? updateData.last_name
         : targetUser.last_name || '';
       updateData.full_name = `${finalFirstName} ${finalLastName}`.trim();
     } else if (updateData.full_name !== undefined) {
@@ -978,15 +994,15 @@ export class UsersService {
       }
     } else {
       // Clinic admin and below can only delete users in their clinic
-      if (targetUser.organization_id !== user.organization_id || 
-          targetUser.clinic_id !== user.clinic_id) {
+      if (targetUser.organization_id !== user.organization_id ||
+        targetUser.clinic_id !== user.clinic_id) {
         throw new ForbiddenException('Access denied: Cannot delete users outside your clinic');
       }
     }
 
-    // Soft delete by setting status to 'deleted'
+    // Soft delete by setting status to 'deleted' (use service role - permission already validated above)
     const { data, error } = await this.supabaseService
-      .getWriteClient(user.access_token)
+      .getClient()
       .from('users')
       .update({ status: 'deleted' })
       .eq('id', id)
@@ -1020,8 +1036,8 @@ export class UsersService {
       }
     } else {
       // Clinic admin and below can only restore users in their clinic
-      if (targetUser.organization_id !== user.organization_id || 
-          targetUser.clinic_id !== user.clinic_id) {
+      if (targetUser.organization_id !== user.organization_id ||
+        targetUser.clinic_id !== user.clinic_id) {
         throw new ForbiddenException('Access denied: Cannot restore users outside your clinic');
       }
     }
@@ -1030,7 +1046,7 @@ export class UsersService {
     const { data, error } = await this.supabaseService
       .getWriteClient(user.access_token)
       .from('users')
-      .update({ 
+      .update({
         status: 'active',
         deleted_at: null,
         deleted_by: null,
@@ -1072,8 +1088,8 @@ export class UsersService {
       }
     } else {
       // Clinic admin and below can only delete users in their clinic
-      if (targetUser.organization_id !== user.organization_id || 
-          targetUser.clinic_id !== user.clinic_id) {
+      if (targetUser.organization_id !== user.organization_id ||
+        targetUser.clinic_id !== user.clinic_id) {
         throw new ForbiddenException('Access denied: Cannot permanently delete users outside your clinic');
       }
     }
@@ -1087,7 +1103,7 @@ export class UsersService {
 
     if (error) {
       console.error('Error permanently deleting user:', error);
-      
+
       // Check for foreign key constraint violations
       if (error.code === '23503') {
         // Extract which table is causing the constraint violation
@@ -1103,12 +1119,12 @@ export class UsersService {
         } else if (error.message?.includes('licensed_states')) {
           relatedEntity = 'licensed states';
         }
-        
+
         throw new ConflictException(
           `Cannot permanently delete user: This user has ${relatedEntity} associated with it. Please delete or reassign the ${relatedEntity} first, or use soft delete instead.`
         );
       }
-      
+
       throw new InternalServerErrorException(
         `Failed to permanently delete user: ${error.message || 'Unknown error'}`,
       );
@@ -1509,19 +1525,19 @@ export class UsersService {
     const filtered = data.filter((userData: any) => {
       const baseRole = userData.role?.toLowerCase();
       const roleName = userData.role_name?.toLowerCase();
-      
+
       // Check base role
       if (veterinarianRoles.includes(baseRole || '')) {
         return true;
       }
-      
+
       // Check custom role names (like "Televet", "Technician")
       if (roleName) {
         // Include roles that contain veterinarian-related terms
         const vetTerms = ['veterinarian', 'vet', 'televet'];
         return vetTerms.some(term => roleName.includes(term));
       }
-      
+
       return false;
     });
 
