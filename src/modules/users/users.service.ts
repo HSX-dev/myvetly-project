@@ -856,22 +856,7 @@ export class UsersService {
     }
 
     const data = result.data;
-
-    // If phone was provided, update it in the clients table (if user is a client)
-    if (phoneToUpdate !== undefined) {
-      const { error: clientUpdateError } = await this.supabaseService
-        .getWriteClient(user.access_token)
-        .from('clients')
-        .update({ phone: phoneToUpdate })
-        .eq('user_id', id);
-
-      if (clientUpdateError) {
-        // Log but don't fail - phone update is optional and user might not be a client
-        console.warn('Could not update phone in clients table (user might not be a client):', clientUpdateError.message);
-      }
-    }
-
-    return data;
+    return { ...data, phone: (data as any)?.phone_number };
   }
 
   /**
