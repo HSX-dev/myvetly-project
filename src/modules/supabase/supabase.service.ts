@@ -90,7 +90,10 @@ export class SupabaseService {
     const serviceKey = this.configService.get<string>('supabase.serviceKey');
     
     if (!url || !serviceKey) {
-      throw new Error('Supabase URL and service key must be configured');
+      const missing = [!url && 'SUPABASE_URL', !serviceKey && 'SUPABASE_SERVICE_KEY'].filter(Boolean);
+      throw new Error(
+        `Supabase required for startup. Set env: ${missing.join(', ')}. Check App Platform env vars (no typos, no trailing spaces).`,
+      );
     }
     
     // Create Supabase client with custom fetch that has extended timeout and retry logic

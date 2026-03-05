@@ -4,6 +4,7 @@ import { RedisService } from '../../../infrastructure/cache/redis.service';
 import {
   OpenaiProvider,
   DeepseekProvider,
+  GeminiProvider,
   AiChatMessage,
 } from '../../../infrastructure/ai-providers';
 import { BaseAiService } from '../shared/base-ai.service';
@@ -23,6 +24,7 @@ const PRICING = {
   'gpt-5-mini': { input: 0.0002, output: 0.0006 },
   'gpt-4o-mini': { input: 0.00015, output: 0.0006 },
   'deepseek-chat': { input: 0.00014, output: 0.00028 },
+  'gemini-3-flash-preview': { input: 0.0001, output: 0.0004 },
 };
 
 @Injectable()
@@ -32,6 +34,7 @@ export class ChatService extends BaseAiService {
     redisService: RedisService,
     openaiProvider: OpenaiProvider,
     deepseekProvider: DeepseekProvider,
+    private readonly geminiProvider: GeminiProvider,
   ) {
     super(supabaseService, redisService, openaiProvider, deepseekProvider);
   }
@@ -275,8 +278,8 @@ export class ChatService extends BaseAiService {
 
   /**
    * Call AI with fallback logic
-   * - Images: Try GPT-4o, fallback to DeepSeek text-only
-   * - No images: Use gpt-5-mini
+   * - Text only: gpt-5-mini
+   * - With images: Gemini Flash 3 preview; fallback to OpenAI vision then DeepSeek text-only
    */
   private async callWithFallback(
     systemPrompt: string,
@@ -291,7 +294,29 @@ export class ChatService extends BaseAiService {
     usedFallback: boolean;
   }> {
     if (hasImages && images.length > 0) {
-      // Try OpenAI with vision
+      // Prefer Gemini Flash 3 for vision
+      if (this.geminiProvider.isAvailable()) {
+        try {
+          const response = await this.geminiProvider.chatWithVision(
+            systemPrompt,
+            userMessage,
+            images,
+            chatHistory,
+            { maxTokens: 4000 },
+          );
+          return {
+            content: response.content,
+            tokensUsed: response.tokensUsed,
+            model: 'gemini-3-flash-preview',
+            usedFallback: false,
+          };
+        } catch (error) {
+          this.logger.warn('Pawla: Gemini vision failed, falling back to OpenAI', {
+            error,
+          });
+        }
+      }
+      // Fallback: OpenAI vision
       try {
         const response = await this.openaiProvider.chatWithVision(
           systemPrompt,
@@ -304,13 +329,12 @@ export class ChatService extends BaseAiService {
           content: response.content,
           tokensUsed: response.tokensUsed,
           model: 'gpt-4o',
-          usedFallback: false,
+          usedFallback: true,
         };
       } catch (error) {
-        this.logger.warn('OpenAI vision failed, falling back to DeepSeek', {
+        this.logger.warn('Pawla: OpenAI vision failed, falling back to DeepSeek text-only', {
           error,
         });
-        // Fallback to DeepSeek text-only (without images)
         const response = await this.callDeepSeekWithHistory(
           systemPrompt,
           userMessage,
@@ -325,7 +349,7 @@ export class ChatService extends BaseAiService {
       }
     }
 
-    // No images: Use gpt-5-mini
+    // Text only: gpt-5-mini
     const response = await this.openaiProvider.chatWithHistory(
       systemPrompt,
       userMessage,
