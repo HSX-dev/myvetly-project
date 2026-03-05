@@ -139,6 +139,8 @@ export class UsersService {
       status,
       created_at,
       has_set_password,
+      phone_number,
+      timezone,
       organizations!users_organization_id_fkey(id, name),
       clinics!users_clinic_id_fkey(id, name)
     `;
@@ -172,7 +174,8 @@ export class UsersService {
       );
     }
 
-    return data;
+    // Expose as phone for API/frontend; DB column is phone_number (E.164 for SMS)
+    return { ...data, phone: (data as any)?.phone_number };
   }
 
   async findByEmail(email: string) {
@@ -704,11 +707,13 @@ export class UsersService {
     delete (updateData as any).password;
     delete (updateData as any).confirm_password;
 
-    // Extract phone field - it's stored in clients table, not users table
-    const phoneToUpdate = (updateData as any).phone;
-    delete (updateData as any).phone;
+    // Map API field phone -> DB column phone_number (users.phone_number, E.164 for SMS)
+    const phone = (updateData as any).phone;
+    if (phone !== undefined) {
+      (updateData as any).phone_number = phone;
+      delete (updateData as any).phone;
+    }
 
-    // Update user record (without phone)
     const { data, error } = await this.supabaseService
       .getClient()
       .from('users')
@@ -729,6 +734,8 @@ export class UsersService {
         status,
         created_at,
         has_set_password,
+        phone_number,
+        timezone,
         organizations!users_organization_id_fkey(id, name),
         clinics!users_clinic_id_fkey(id, name)
       `)
@@ -741,21 +748,7 @@ export class UsersService {
       );
     }
 
-    // If phone was provided, update it in the clients table (if user is a client)
-    if (phoneToUpdate !== undefined) {
-      const { error: clientUpdateError } = await this.supabaseService
-        .getClient()
-        .from('clients')
-        .update({ phone: phoneToUpdate })
-        .eq('user_id', id);
-
-      if (clientUpdateError) {
-        // Log but don't fail - phone update is optional and user might not be a client
-        console.warn('Could not update phone in clients table (user might not be a client):', clientUpdateError.message);
-      }
-    }
-
-    return data;
+    return { ...data, phone: (data as any)?.phone_number };
   }
 
   /**
