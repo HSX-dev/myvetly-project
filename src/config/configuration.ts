@@ -17,7 +17,8 @@ export default () => ({
   ai: {
     deepseekApiKey: process.env.DEEPSEEK_API_KEY,
     openaiApiKey: process.env.OPENAI_API_KEY,
-    geminiApiKey: process.env.GEMINI_API_KEY,
+    // Support both correct and common typo (e.g. DigitalOcean env)
+    geminiApiKey: process.env.GEMINI_API_KEY || process.env.Gemeni_API_Key,
   },
 
   redis: {
