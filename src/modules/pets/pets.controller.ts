@@ -58,18 +58,40 @@ export class PetsController {
     return this.petsService.getAllBreeds();
   }
 
+  @Get('clinic/:clinicId/filter-options')
+  getClinicFilterOptions(@Param('clinicId') clinicId: string, @GetUser() user: any) {
+    if (!user) {
+      throw new InternalServerErrorException('User context is missing. Authentication may have failed.');
+    }
+    return this.petsService.getClinicFilterOptions(clinicId, user);
+  }
+
   @Get('clinic/:clinicId')
-  findByClinic(@Param('clinicId') clinicId: string, @GetUser() user: any) {
-    // Log for debugging
+  findByClinic(
+    @Param('clinicId') clinicId: string,
+    @GetUser() user: any,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('search') search?: string,
+    @Query('species') species?: string,
+    @Query('status') status?: string,
+    @Query('breed') breed?: string,
+  ) {
     if (!user) {
       console.error('User context is missing in findByClinic');
       throw new InternalServerErrorException('User context is missing. Authentication may have failed.');
     }
-    console.log('findByClinic called with user:', {
-      id: user.id,
-      clinic_id: user.clinic_id,
-      role: user.role
-    });
+    const hasPaginatedParams = page != null || limit != null || search?.trim() || species || status || breed;
+    if (hasPaginatedParams) {
+      return this.petsService.findByClinicPaginated(clinicId, user, {
+        page: page ? parseInt(page, 10) : 1,
+        limit: limit ? parseInt(limit, 10) : 10,
+        search: search?.trim() || undefined,
+        species: species ? species.split(',').map((s) => s.trim()).filter(Boolean) : undefined,
+        status: status ? status.split(',').map((s) => s.trim()).filter(Boolean) : undefined,
+        breed: breed ? breed.split(',').map((s) => s.trim()).filter(Boolean) : undefined,
+      });
+    }
     return this.petsService.findByClinic(clinicId, user);
   }
 

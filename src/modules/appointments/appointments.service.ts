@@ -413,7 +413,7 @@ export class AppointmentsService {
       });
 
       const { data, error } = await this.supabaseService
-        .getClient()
+        .getWriteClient(user.access_token)
         .from('appointments')
         .insert([insertData])
         .select(`
@@ -615,7 +615,7 @@ export class AppointmentsService {
       });
 
       const { data, error } = await this.supabaseService
-        .getClient()
+        .getWriteClient(user.access_token)
         .from('appointments')
         .update(updateData)
         .eq('id', id)
@@ -728,6 +728,41 @@ export class AppointmentsService {
   }
 
   /**
+   * Check if the current user can cancel the appointment.
+   * Only clinic_admin, client (owner), or assigned vet can cancel.
+   */
+  private async canCancelAppointment(appointmentId: string, user: UserContext): Promise<boolean> {
+    const { data: row, error } = await this.supabaseService
+      .getClient()
+      .from('appointments')
+      .select('client_id, vet_id, tenant_id')
+      .eq('id', appointmentId)
+      .single();
+
+    if (error || !row) return false;
+
+    // Clinic admin (or super_admin) can cancel any appointment in their clinic
+    if (user.role === 'super_admin') return true;
+    if (user.role === 'clinic_admin' && user.clinic_id && row.tenant_id === user.clinic_id) return true;
+
+    // Assigned vet can cancel
+    if (row.vet_id && row.vet_id === user.user_id) return true;
+
+    // Client (owner) can cancel: get client's user_id
+    if (row.client_id) {
+      const { data: client } = await this.supabaseService
+        .getClient()
+        .from('clients')
+        .select('user_id')
+        .eq('id', row.client_id)
+        .single();
+      if (client?.user_id === user.user_id) return true;
+    }
+
+    return false;
+  }
+
+  /**
    * Update appointment status (soft delete sets status to 'cancelled')
    */
   async updateStatus(
@@ -737,6 +772,16 @@ export class AppointmentsService {
     vetId?: string,
     notes?: string,
   ) {
+    // When cancelling, only clinic_admin, client, or assigned vet are allowed
+    if (status === 'cancelled') {
+      const allowed = await this.canCancelAppointment(id, user);
+      if (!allowed) {
+        throw new ForbiddenException(
+          'Only clinic admin, the client (owner), or the assigned veterinarian can cancel this appointment.'
+        );
+      }
+    }
+
     // Get current appointment
     const appointment = await this.findOne(id);
 
@@ -757,7 +802,7 @@ export class AppointmentsService {
     }
 
     const { data, error } = await this.supabaseService
-      .getClient()
+      .getWriteClient(user.access_token)
       .from('appointments')
       .update(updateData)
       .eq('id', id)
